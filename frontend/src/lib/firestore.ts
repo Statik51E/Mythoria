@@ -90,14 +90,10 @@ export async function listCharacters(campaignId: string, constraints: QueryConst
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Character, "id">) }));
 }
 
-export async function createCharacter(campaignId: string, ownerUid: string, name: string, className: string): Promise<string> {
-  const ref = await addDoc(collection(db, `campaigns/${campaignId}/characters`), {
-    ownerUid,
-    name,
-    className,
-    level: 1,
-    stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-    inventory: [],
-  });
+export async function createCharacter(
+  campaignId: string,
+  data: Omit<Character, "id">
+): Promise<string> {
+  const ref = await addDoc(collection(db, `campaigns/${campaignId}/characters`), data);
   return ref.id;
 }

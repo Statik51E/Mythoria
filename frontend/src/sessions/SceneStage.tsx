@@ -1,4 +1,6 @@
 import type { Character } from "../lib/types";
+import { buildPortraitUrl } from "../lib/portrait";
+import CharacterPortrait from "./CharacterPortrait";
 
 interface Props {
   campaignName: string;
@@ -10,7 +12,6 @@ interface Props {
 export default function SceneStage({ campaignName, characters, currentUid, sceneTitle }: Props) {
   return (
     <div className="absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
-      {/* Parchment-like base */}
       <div
         className="absolute inset-0"
         style={{
@@ -23,7 +24,6 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
         }}
       />
 
-      {/* Hex grid */}
       <div
         className="absolute inset-0 opacity-[0.18]"
         style={{
@@ -38,7 +38,6 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
         }}
       />
 
-      {/* Vignette */}
       <div
         className="absolute inset-0"
         style={{
@@ -46,7 +45,6 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
         }}
       />
 
-      {/* Grain */}
       <div
         className="absolute inset-0"
         style={{
@@ -55,7 +53,6 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
         }}
       />
 
-      {/* Scene title */}
       <div className="absolute top-20 left-1/2 -translate-x-1/2 text-center pointer-events-none">
         <div className="font-mono text-[10px] tracking-eyebrow uppercase text-gold-500/60">Scène</div>
         <div className="font-serif italic text-[20px] text-parchment-2/80 mt-1 max-w-md">
@@ -63,9 +60,8 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
         </div>
       </div>
 
-      {/* Tokens arranged in a circle around the center */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="relative" style={{ width: 360, height: 360 }}>
+        <div className="relative" style={{ width: 420, height: 420 }}>
           {characters.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div
@@ -75,14 +71,14 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
                   background: "rgba(217,185,104,.05)",
                 }}
               />
-              <div className="absolute font-mono text-[10px] tracking-label uppercase text-ink-400">
+              <div className="absolute font-mono text-[10px] tracking-label uppercase text-ink-400 mt-32">
                 Aucun héros
               </div>
             </div>
           ) : (
             characters.map((c, i) => {
               const angle = (i / characters.length) * Math.PI * 2 - Math.PI / 2;
-              const radius = characters.length === 1 ? 0 : 130;
+              const radius = characters.length === 1 ? 0 : 150;
               const x = Math.cos(angle) * radius;
               const y = Math.sin(angle) * radius;
               return (
@@ -96,7 +92,6 @@ export default function SceneStage({ campaignName, characters, currentUid, scene
               );
             })
           )}
-          {/* Center sigil (lantern) */}
           {characters.length > 0 && (
             <div
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full"
@@ -119,22 +114,51 @@ function CharacterToken({ character, mine }: { character: Character; mine: boole
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  const border = mine ? "rgba(217,185,104,.95)" : "rgba(109,138,90,.85)";
+
+  const portraitUrl = character.portraitSeed
+    ? buildPortraitUrl(
+        {
+          race: character.race,
+          classId: character.classId,
+          appearance: character.appearance,
+          name: character.name,
+        },
+        character.portraitSeed,
+        192
+      )
+    : null;
+
+  const ringColor = mine ? "rgba(217,185,104,.95)" : "rgba(109,138,90,.85)";
   const glow = mine ? "rgba(217,185,104,.45)" : "rgba(109,138,90,.30)";
-  const bg = mine
-    ? "radial-gradient(circle at 35% 30%, #5a4220, #1a0e04)"
-    : "radial-gradient(circle at 35% 30%, #2a3a1f, #0c1408)";
+
   return (
     <div className="flex flex-col items-center gap-2 fade-in">
       <div
-        className="w-16 h-16 rounded-full flex items-center justify-center font-serif text-[22px] text-parchment shadow-panel"
+        className="rounded-full p-[3px]"
         style={{
-          border: `2px solid ${border}`,
-          background: bg,
-          boxShadow: `0 0 32px ${glow}, inset 0 0 10px rgba(0,0,0,.6)`,
+          background: `radial-gradient(circle, ${ringColor}, ${ringColor} 80%, transparent)`,
+          boxShadow: `0 0 32px ${glow}`,
         }}
       >
-        {initials || "?"}
+        {portraitUrl ? (
+          <CharacterPortrait
+            src={portraitUrl}
+            alt={character.name}
+            size={72}
+            rounded="full"
+            fallbackInitials={initials}
+          />
+        ) : (
+          <div
+            className="w-[72px] h-[72px] rounded-full flex items-center justify-center font-serif text-[24px] text-parchment"
+            style={{
+              background: "radial-gradient(circle at 35% 30%, #5a4220, #1a0e04)",
+              boxShadow: "inset 0 0 10px rgba(0,0,0,.6)",
+            }}
+          >
+            {initials || "?"}
+          </div>
+        )}
       </div>
       <div className="font-mono text-[10px] tracking-label uppercase text-parchment-2 text-center max-w-[100px] truncate">
         {character.name}

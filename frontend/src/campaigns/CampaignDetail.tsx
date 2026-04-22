@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import {
   getCampaign, listSessions, createSession, listCharacters, createCharacter,
 } from "../lib/firestore";
+import { buildPortraitUrl } from "../lib/portrait";
 import type { Campaign, Character, SessionDoc } from "../lib/types";
+import CharacterForge from "../sessions/CharacterForge";
+import CharacterPortrait from "../sessions/CharacterPortrait";
 
 export default function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>();
@@ -13,8 +16,7 @@ export default function CampaignDetail() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [sessions, setSessions] = useState<SessionDoc[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [newCharName, setNewCharName] = useState("");
-  const [newCharClass, setNewCharClass] = useState("");
+  const [showForge, setShowForge] = useState(false);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -24,6 +26,11 @@ export default function CampaignDetail() {
       setCharacters(await listCharacters(campaignId));
     })();
   }, [campaignId]);
+
+  const myCharacter = useMemo(
+    () => characters.find((c) => c.ownerUid === user?.uid) ?? null,
+    [characters, user?.uid]
+  );
 
   if (!campaign || !campaignId) {
     return <div className="eyebrow animate-pulse">Chargement...</div>;
@@ -36,12 +43,11 @@ export default function CampaignDetail() {
     navigate(`/campaigns/${campaignId}/sessions/${id}`);
   }
 
-  async function addCharacter() {
-    if (!user || !campaignId || !newCharName.trim()) return;
-    await createCharacter(campaignId, user.uid, newCharName.trim(), newCharClass.trim() || "Aventurier");
-    setNewCharName("");
-    setNewCharClass("");
+  async function handleForge(data: Omit<Character, "id">) {
+    if (!campaignId) return;
+    await createCharacter(campaignId, data);
     setCharacters(await listCharacters(campaignId));
+    setShowForge(false);
   }
 
   return (
@@ -107,46 +113,89 @@ export default function CampaignDetail() {
       </section>
 
       <section>
-        <div className="eyebrow mb-2">Personnages</div>
-        <h2 className="font-serif text-[26px] text-parchment m-0 mb-4">La compagnie</h2>
+        <div className="flex items-end justify-between mb-4">
+          <div>
+            <div className="eyebrow mb-2">Personnages</div>
+            <h2 className="font-serif text-[26px] text-parchment m-0">La compagnie</h2>
+          </div>
+          {!myCharacter && (
+            <button onClick={() => setShowForge(true)} className="btn-primary">+ Forger mon personnage</button>
+          )}
+        </div>
 
-        {characters.length > 0 && (
-          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+        {characters.length > 0 ? (
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {characters.map((c) => (
-              <li key={c.id} className="panel p-4 flex items-center justify-between">
-                <div>
-                  <div className="font-serif text-[18px] text-parchment">{c.name}</div>
-                  <div className="font-mono text-[10px] tracking-label uppercase text-ink-400 mt-0.5">
-                    {c.className} · niv. {c.level}
-                  </div>
-                </div>
-                {c.ownerUid === user?.uid && <span className="chip chip-moss">Toi</span>}
-              </li>
+              <CharacterCard key={c.id} character={c} mine={c.ownerUid === user?.uid} />
             ))}
           </ul>
+        ) : (
+          <p className="font-serif italic text-ink-400 text-[15px]">
+            Aucun héros encore. Forge le tien pour ouvrir le chapitre.
+          </p>
         )}
-
-        <div className="panel-gold p-5">
-          <div className="label mb-3">Forger un personnage</div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              value={newCharName}
-              onChange={(e) => setNewCharName(e.target.value)}
-              placeholder="Nom"
-              className="field font-serif text-[16px] flex-1"
-            />
-            <input
-              value={newCharClass}
-              onChange={(e) => setNewCharClass(e.target.value)}
-              placeholder="Classe (Paladin, Rôdeuse...)"
-              className="field font-serif text-[16px] sm:w-64"
-            />
-            <button onClick={addCharacter} disabled={!newCharName.trim()} className="btn-primary">
-              + Personnage
-            </button>
-          </div>
-        </div>
       </section>
+
+      {showForge && user && (
+        <CharacterForge
+          ownerUid={user.uid}
+          onCreate={handleForge}
+          onClose={() => setShowForge(false)}
+          dismissible={true}
+        />
+      )}
     </div>
+  );
+}
+
+function CharacterCard({ character, mine }: { character: Character; mine: boolean }) {
+  const initials = character.name
+    .split(/\s+/)
+    .map((s) => s[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const portraitUrl = character.portraitSeed
+    ? buildPortraitUrl(
+        {
+          race: character.race,
+          classId: character.classId,
+          appearance: character.appearance,
+          name: character.name,
+        },
+        character.portraitSeed,
+        192
+      )
+    : null;
+
+  return (
+    <li className="panel p-4 flex items-center gap-4">
+      {portraitUrl ? (
+        <CharacterPortrait
+          src={portraitUrl}
+          alt={character.name}
+          size={64}
+          rounded="md"
+          fallbackInitials={initials}
+        />
+      ) : (
+        <div
+          className="w-16 h-16 rounded-sm border border-hairline-strong flex items-center justify-center font-serif text-[22px] text-parchment shrink-0"
+          style={{ background: "linear-gradient(135deg, #2a2219, #191210)" }}
+        >
+          {initials || "?"}
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <div className="font-serif text-[18px] text-parchment truncate">{character.name}</div>
+          {mine && <span className="chip chip-moss text-[9px]">Toi</span>}
+        </div>
+        <div className="font-mono text-[10px] tracking-label uppercase text-ink-400">
+          {character.className} · niv. {character.level}
+        </div>
+      </div>
+    </li>
   );
 }

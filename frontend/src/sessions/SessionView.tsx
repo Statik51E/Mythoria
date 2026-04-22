@@ -10,6 +10,7 @@ import {
 } from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
 import type { Campaign, Character, Message, MessageType } from "../lib/types";
+type NewCharacter = Omit<Character, "id">;
 import NarrationPanel, { QuickAction } from "./NarrationPanel";
 import PlayerHUD from "./PlayerHUD";
 import Composer from "./Composer";
@@ -149,9 +150,9 @@ export default function SessionView() {
     setPrefillToken((n) => n + 1);
   }
 
-  async function handleForge(name: string, className: string) {
+  async function handleForge(data: NewCharacter) {
     if (!campaignId || !user) return;
-    await createCharacter(campaignId, user.uid, name, className);
+    await createCharacter(campaignId, data);
     const updated = await listCharacters(campaignId);
     setCharacters(updated);
     setShowForge(false);
@@ -233,6 +234,7 @@ export default function SessionView() {
 
       {showForge && (
         <CharacterForge
+          ownerUid={user.uid}
           onCreate={handleForge}
           onClose={() => setShowForge(false)}
           dismissible={Boolean(myCharacter)}

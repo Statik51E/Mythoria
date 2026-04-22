@@ -18,13 +18,43 @@ export interface Campaign {
   createdAt: Timestamp;
 }
 
+export type RaceId = "human" | "elf" | "dwarf" | "halfling" | "halforc" | "tiefling";
+export type ClassId =
+  | "warrior"
+  | "mage"
+  | "rogue"
+  | "paladin"
+  | "ranger"
+  | "cleric"
+  | "barbarian"
+  | "bard";
+
+export type StatKey = "str" | "dex" | "con" | "int" | "wis" | "cha";
+export type SkillKey = "combat" | "stealth" | "magic" | "social" | "knowledge" | "survival";
+
+export interface Appearance {
+  gender: "male" | "female" | "androgynous";
+  skin: string;
+  hairColor: string;
+  hairStyle: string;
+  eyes: string;
+  beard: string;
+  clothing: string;
+}
+
 export interface Character {
   id: string;
   ownerUid: string;
   name: string;
+  race?: RaceId;
+  classId?: ClassId;
   className: string;
   level: number;
-  stats: Record<string, number>;
+  stats: Record<StatKey, number>;
+  skills?: Record<SkillKey, number>;
+  appearance?: Appearance;
+  portraitSeed?: number;
+  portraitPrompt?: string;
   inventory: string[];
 }
 
