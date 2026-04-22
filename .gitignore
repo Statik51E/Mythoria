@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.vite/
+.DS_Store
+Thumbs.db
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Vercel
+.vercel/
+
+# Frontend
+frontend/dev-dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+!frontend/.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors
+.vscode/
+.idea/
