@@ -79,12 +79,19 @@ export interface Character {
   equipment?: Equipment;
 }
 
+export type NpcRole = "ally" | "neutral" | "hostile";
+
 export interface Npc {
   id: string;
   name: string;
-  persona: string;
-  stats?: Record<string, number>;
-  visibleToPlayers: boolean;
+  role: NpcRole;
+  description: string;
+  race?: RaceId;
+  classId?: ClassId;
+  appearance?: Partial<Appearance>;
+  portraitSeed?: number;
+  hp?: number;
+  maxHp?: number;
 }
 
 export interface TokenPosition {
@@ -109,9 +116,22 @@ export interface SessionDoc {
   sceneSummary?: string;
   currentScene?: CurrentScene;
   tokens?: Record<string, TokenPosition>;
+  npcs?: Record<string, Npc>;
+  npcTokens?: Record<string, TokenPosition>;
 }
 
-export type MessageType = "player" | "gm" | "system" | "dice";
+export type MessageType = "player" | "gm" | "system" | "dice" | "npc";
+
+export interface SuggestedAction {
+  label: string;
+  prompt: string;
+}
+
+export interface SceneSuggestion {
+  id?: string;
+  label: string;
+  prompt: string;
+}
 
 export interface Message {
   id: string;
@@ -120,4 +140,8 @@ export interface Message {
   content: string;
   createdAt: Timestamp;
   tokensUsed?: number;
+  suggestedActions?: SuggestedAction[];
+  sceneSuggestion?: SceneSuggestion;
+  npcId?: string;
+  interactionNpcId?: string;
 }

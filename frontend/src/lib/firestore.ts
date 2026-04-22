@@ -59,14 +59,17 @@ export async function postMessage(
   sessionId: string,
   authorUid: string,
   content: string,
-  type: Message["type"] = "player"
+  type: Message["type"] = "player",
+  extra: Partial<Pick<Message, "interactionNpcId">> = {}
 ): Promise<void> {
-  await addDoc(collection(db, `campaigns/${campaignId}/sessions/${sessionId}/messages`), {
+  const data: Record<string, unknown> = {
     type,
     authorUid,
     content,
     createdAt: serverTimestamp(),
-  });
+  };
+  if (extra.interactionNpcId) data.interactionNpcId = extra.interactionNpcId;
+  await addDoc(collection(db, `campaigns/${campaignId}/sessions/${sessionId}/messages`), data);
 }
 
 export async function listSessions(campaignId: string): Promise<SessionDoc[]> {

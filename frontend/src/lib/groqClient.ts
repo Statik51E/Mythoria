@@ -10,12 +10,17 @@ interface CallGroqInput {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  persistAs?: "gm" | "system";
+  persistAs?: "gm" | "system" | "npc";
+  structured?: boolean;
+  npcId?: string;
+  interactionNpcId?: string;
 }
 
 interface CallGroqOutput {
   content: string;
   tokensUsed: number | null;
+  suggestedActions?: { label: string; prompt: string }[];
+  sceneSuggestion?: { id?: string; label: string; prompt: string };
 }
 
 export async function callGroq(input: CallGroqInput): Promise<CallGroqOutput> {

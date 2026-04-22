@@ -12,6 +12,12 @@ import {
   updateSession,
 } from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
+import {
+  MJ_SYSTEM_PROMPT,
+  NPC_VOICE_PROMPT,
+  buildContextSuffix,
+  buildNpcPersonaSuffix,
+} from "../lib/gmPrompts";
 import type {
   Campaign,
   Character,
@@ -20,8 +26,10 @@ import type {
   Equipment,
   Item,
   Message,
-  MessageType,
+  Npc,
+  SceneSuggestion,
   SessionDoc,
+  SuggestedAction,
   TokenPosition,
 } from "../lib/types";
 type NewCharacter = Omit<Character, "id">;
@@ -33,12 +41,8 @@ import SceneSelector from "./SceneSelector";
 import CharacterForge from "./CharacterForge";
 import DiceRoll from "./DiceRoll";
 import Inventory, { ItemAction } from "./Inventory";
-
-const SYSTEM_PROMPT = `Tu es le maître du jeu d'une campagne de TTRPG fantasy.
-Réponds en français, ton narratif vivant, court et évocateur (2-4 phrases max).
-Décris les conséquences des actions des joueurs, fais parler les PNJ en italique entre guillemets.
-Ne tranche jamais à la place du joueur. Demande un jet de dé quand l'issue est incertaine.
-Pas de listes à puces — seulement de la prose.`;
+import NpcForge from "./NpcForge";
+import InteractionScene from "./InteractionScene";
 
 const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
   speak: "Je dis : « ",
@@ -66,9 +70,13 @@ export default function SessionView() {
   const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
   const [showInventory, setShowInventory] = useState(false);
   const [showSceneSelector, setShowSceneSelector] = useState(false);
+  const [showNpcForge, setShowNpcForge] = useState(false);
+  const [activeInteractionNpcId, setActiveInteractionNpcId] = useState<string | null>(null);
   const [session, setSession] = useState<SessionDoc | null>(null);
   const askingRef = useRef(false);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastReactedMessageIdRef = useRef<string | null>(null);
+  const appliedSceneSuggestionRef = useRef<string | null>(null);
 
   useEffect(() => {
     const el = messagesScrollRef.current;
@@ -117,35 +125,40 @@ export default function SessionView() {
     );
   }
   const isHost = campaign.hostUid === user.uid;
-  const lastGm = [...messages].reverse().find((m) => m.type === "gm");
+  const activeNpc: Npc | null = activeInteractionNpcId
+    ? session?.npcs?.[activeInteractionNpcId] ?? null
+    : null;
+  const lastGm = [...messages].reverse().find((m) => m.type === "gm" && !m.npcId);
 
-  async function askGM(extra?: { type: MessageType; content: string }) {
+  // ---------- Groq calls ----------
+
+  async function callMj() {
     if (!campaignId || !sessionId || askingRef.current) return;
     askingRef.current = true;
     setError(null);
     setThinking(true);
     try {
-      const sceneLine = session?.currentScene
-        ? `\nScène actuelle : ${session.currentScene.label}.`
-        : "";
-      const baseTranscript: GroqMessage[] = [
-        {
-          role: "system",
-          content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.${sceneLine}`,
-        },
-        ...messages.map((m): GroqMessage => ({
-          role: m.type === "gm" ? "assistant" : "user",
-          content: m.type === "gm" ? m.content : `[${m.type}] ${m.content}`,
-        })),
+      const ctx = buildContextSuffix({
+        campaign,
+        scene: session?.currentScene,
+        myCharacter,
+        npcs: session?.npcs,
+      });
+      const transcript: GroqMessage[] = [
+        { role: "system", content: `${MJ_SYSTEM_PROMPT}${ctx}` },
+        ...messages
+          .filter((m) => !m.npcId && !m.interactionNpcId) // exclude private NPC dialogue from MJ context
+          .map((m): GroqMessage => ({
+            role: m.type === "gm" ? "assistant" : "user",
+            content: m.type === "gm" ? m.content : `[${m.type}] ${m.content}`,
+          })),
       ];
-      if (extra) {
-        baseTranscript.push({ role: "user", content: `[${extra.type}] ${extra.content}` });
-      }
       await callGroq({
         campaignId,
         sessionId,
-        messages: baseTranscript,
+        messages: transcript,
         persistAs: "gm",
+        structured: true,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Le MJ a perdu sa voix.");
@@ -155,13 +168,94 @@ export default function SessionView() {
     }
   }
 
+  async function callNpc(npc: Npc) {
+    if (!campaignId || !sessionId || askingRef.current) return;
+    askingRef.current = true;
+    setError(null);
+    setThinking(true);
+    try {
+      const persona = buildNpcPersonaSuffix(npc);
+      const ctx = buildContextSuffix({
+        campaign,
+        scene: session?.currentScene,
+        myCharacter,
+      });
+      const interactionLog = messages.filter(
+        (m) => m.interactionNpcId === npc.id || m.npcId === npc.id
+      );
+      const transcript: GroqMessage[] = [
+        { role: "system", content: `${NPC_VOICE_PROMPT}${persona}${ctx}` },
+        ...interactionLog.map((m): GroqMessage => ({
+          role: m.npcId === npc.id ? "assistant" : "user",
+          content: m.content,
+        })),
+      ];
+      await callGroq({
+        campaignId,
+        sessionId,
+        messages: transcript,
+        persistAs: "gm",
+        structured: true,
+        npcId: npc.id,
+        interactionNpcId: npc.id,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : `${npc.name} reste muet.`);
+    } finally {
+      setThinking(false);
+      askingRef.current = false;
+    }
+  }
+
+  // ---------- Auto-trigger MJ/NPC for host on new player input ----------
+
+  useEffect(() => {
+    if (!isHost || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.type === "gm") return;
+    if (last.authorUid === "system") return;
+    if (lastReactedMessageIdRef.current === last.id) return;
+    lastReactedMessageIdRef.current = last.id;
+
+    const delay = last.type === "dice" ? 2400 : 250;
+    const timer = setTimeout(() => {
+      if (last.interactionNpcId) {
+        const npc = session?.npcs?.[last.interactionNpcId];
+        if (npc) {
+          callNpc(npc);
+          return;
+        }
+      }
+      callMj();
+    }, delay);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isHost]);
+
+  // ---------- Auto-apply MJ scene suggestion (host only) ----------
+
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.sceneSuggestion) return;
+    const key = `${lastGm.id}:${lastGm.sceneSuggestion.label}`;
+    if (appliedSceneSuggestionRef.current === key) return;
+    appliedSceneSuggestionRef.current = key;
+    // Don't auto-apply — let host accept via the button. (Avoid surprise scene swaps.)
+  }, [lastGm, isHost]);
+
+  // ---------- Player actions ----------
+
   async function send(content: string) {
     if (!campaignId || !sessionId || !user) return;
     setError(null);
-    await postMessage(campaignId, sessionId, user.uid, content, "player");
-    if (isHost) {
-      await askGM({ type: "player", content });
-    }
+    await postMessage(
+      campaignId,
+      sessionId,
+      user.uid,
+      content,
+      "player",
+      activeInteractionNpcId ? { interactionNpcId: activeInteractionNpcId } : {}
+    );
   }
 
   async function handleQuickAction(kind: QuickAction) {
@@ -172,16 +266,27 @@ export default function SessionView() {
       setPendingRoll({ value, rollerName: who });
       const diceText = `${who} lance 1d20 → ${value}${value === 20 ? " (réussite critique !)" : value === 1 ? " (échec critique !)" : ""}`;
       await postMessage(campaignId, sessionId, user.uid, diceText, "dice");
-      if (isHost) {
-        // Wait for the dice animation to play before MJ reacts.
-        setTimeout(() => {
-          askGM({ type: "dice", content: diceText });
-        }, 2400);
-      }
       return;
     }
     setPrefill(PREFILLS[kind]);
     setPrefillToken((n) => n + 1);
+  }
+
+  function handleSuggestedAction(action: SuggestedAction) {
+    setPrefill(action.prompt);
+    setPrefillToken((n) => n + 1);
+  }
+
+  async function handleApplySceneSuggestion(suggestion: SceneSuggestion) {
+    if (!campaignId || !sessionId || !user) return;
+    const scene: CurrentScene = {
+      id: suggestion.id ?? `mj_${Date.now()}`,
+      label: suggestion.label,
+      prompt: suggestion.prompt,
+      seed: Math.floor(Math.random() * 1_000_000),
+    };
+    await updateSession(campaignId, sessionId, { currentScene: scene });
+    await postMessage(campaignId, sessionId, user.uid, `Le décor change : ${scene.label}.`, "system");
   }
 
   async function handleForge(data: NewCharacter) {
@@ -193,20 +298,38 @@ export default function SessionView() {
   async function handlePickScene(scene: CurrentScene) {
     if (!campaignId || !sessionId || !user) return;
     await updateSession(campaignId, sessionId, { currentScene: scene });
+    await postMessage(campaignId, sessionId, user.uid, `Le décor change : ${scene.label}.`, "system");
+    setShowSceneSelector(false);
+  }
+
+  async function handleMoveCharacterToken(charId: string, pos: TokenPosition) {
+    if (!campaignId || !sessionId) return;
+    const nextTokens = { ...(session?.tokens ?? {}), [charId]: pos };
+    await updateSession(campaignId, sessionId, { tokens: nextTokens });
+  }
+
+  async function handleMoveNpcToken(npcId: string, pos: TokenPosition) {
+    if (!campaignId || !sessionId) return;
+    const nextTokens = { ...(session?.npcTokens ?? {}), [npcId]: pos };
+    await updateSession(campaignId, sessionId, { npcTokens: nextTokens });
+  }
+
+  async function handleCreateNpc(npc: Npc) {
+    if (!campaignId || !sessionId || !user) return;
+    const nextNpcs = { ...(session?.npcs ?? {}), [npc.id]: npc };
+    await updateSession(campaignId, sessionId, { npcs: nextNpcs });
     await postMessage(
       campaignId,
       sessionId,
       user.uid,
-      `Le décor change : ${scene.label}.`,
+      `${npc.name} entre en scène.`,
       "system"
     );
-    setShowSceneSelector(false);
+    setShowNpcForge(false);
   }
 
-  async function handleMoveToken(charId: string, pos: TokenPosition) {
-    if (!campaignId || !sessionId) return;
-    const nextTokens = { ...(session?.tokens ?? {}), [charId]: pos };
-    await updateSession(campaignId, sessionId, { tokens: nextTokens });
+  function handleClickNpc(npc: Npc) {
+    setActiveInteractionNpcId(npc.id);
   }
 
   async function handleItemAction(item: Item, action: ItemAction) {
@@ -228,11 +351,9 @@ export default function SessionView() {
     } else if (action === "equip" && slot) {
       const previouslyEquipped = equipment[slot];
       newEquipment = { ...equipment, [slot]: item };
-      if (previouslyEquipped) {
-        line = `${ch.name} range ${previouslyEquipped.name} et équipe ${item.name}.`;
-      } else {
-        line = `${ch.name} équipe ${item.name}.`;
-      }
+      line = previouslyEquipped
+        ? `${ch.name} range ${previouslyEquipped.name} et équipe ${item.name}.`
+        : `${ch.name} équipe ${item.name}.`;
     } else if (action === "unequip" && slot) {
       newEquipment = { ...equipment, [slot]: null };
       line = `${ch.name} range ${item.name}.`;
@@ -252,10 +373,14 @@ export default function SessionView() {
       equipment: newEquipment,
     });
     if (line) {
-      await postMessage(campaignId, sessionId, user.uid, line, "system");
-      if (isHost && action === "use") {
-        await askGM({ type: "system", content: line });
-      }
+      await postMessage(
+        campaignId,
+        sessionId,
+        user.uid,
+        line,
+        "system",
+        activeInteractionNpcId ? { interactionNpcId: activeInteractionNpcId } : {}
+      );
     }
   }
 
@@ -268,8 +393,13 @@ export default function SessionView() {
         isHost={isHost}
         scene={session?.currentScene}
         tokens={session?.tokens}
-        onMoveToken={handleMoveToken}
+        npcs={session?.npcs}
+        npcTokens={session?.npcTokens}
+        onMoveCharacterToken={handleMoveCharacterToken}
+        onMoveNpcToken={handleMoveNpcToken}
         onOpenSceneSelector={() => setShowSceneSelector(true)}
+        onOpenNpcForge={() => setShowNpcForge(true)}
+        onClickNpc={handleClickNpc}
       />
 
       <header className="relative z-10 h-12 border-b border-hairline bg-ink-900/70 backdrop-blur-md flex items-center justify-between px-5">
@@ -281,7 +411,7 @@ export default function SessionView() {
             ← Table
           </Link>
           <div className="font-mono text-[10px] tracking-label uppercase text-ink-300">
-            <span className="text-parchment">Mythoria</span> · {campaign.name} · Tour {messages.filter((m) => m.type === "gm").length + 1}
+            <span className="text-parchment">Mythoria</span> · {campaign.name} · Tour {messages.filter((m) => m.type === "gm" && !m.npcId).length + 1}
           </div>
         </div>
         <div className="flex items-center gap-5">
@@ -310,9 +440,16 @@ export default function SessionView() {
               </p>
             </div>
           ) : (
-            messages.map((m) => <TranscriptLine key={m.id} message={m} currentUid={user.uid} />)
+            messages.map((m) => (
+              <TranscriptLine
+                key={m.id}
+                message={m}
+                currentUid={user.uid}
+                npcName={m.npcId ? session?.npcs?.[m.npcId]?.name : undefined}
+              />
+            ))
           )}
-          {thinking && (
+          {thinking && !activeNpc && (
             <div className="fade-in panel-gold p-4 max-w-2xl">
               <div className="eyebrow text-arcane mb-1">Le Maître</div>
               <p className="font-serif italic text-parchment-2 text-[15px] animate-pulse m-0">
@@ -322,19 +459,43 @@ export default function SessionView() {
           )}
         </div>
 
-        <NarrationPanel
-          message={lastGm}
-          isHost={isHost}
-          thinking={thinking}
-          onAskGM={() => askGM()}
-          canAsk={messages.length > 0}
-          onQuickAction={handleQuickAction}
-          hasCharacter={Boolean(myCharacter)}
-        />
+        {activeNpc ? (
+          <InteractionScene
+            npc={activeNpc}
+            messages={messages}
+            thinking={thinking}
+            hasCharacter={Boolean(myCharacter)}
+            onSuggestedAction={handleSuggestedAction}
+            onSpeak={() => {
+              setPrefill(`Je dis à ${activeNpc.name} : « `);
+              setPrefillToken((n) => n + 1);
+            }}
+            onClose={() => setActiveInteractionNpcId(null)}
+          />
+        ) : (
+          <NarrationPanel
+            message={lastGm}
+            isHost={isHost}
+            thinking={thinking}
+            onAskGM={() => callMj()}
+            canAsk={messages.length > 0}
+            onQuickAction={handleQuickAction}
+            onSuggestedAction={handleSuggestedAction}
+            onApplySceneSuggestion={
+              lastGm?.sceneSuggestion ? () => handleApplySceneSuggestion(lastGm.sceneSuggestion!) : undefined
+            }
+            hasCharacter={Boolean(myCharacter)}
+          />
+        )}
       </div>
 
       <div className="absolute bottom-0 left-0 right-[300px] z-20 p-4">
         {error && <div className="mb-2 chip chip-ember">{error}</div>}
+        {activeNpc && (
+          <div className="mb-2 chip chip-gold">
+            Tu parles à {activeNpc.name} — tape ta réplique
+          </div>
+        )}
         <div className="flex gap-3 items-end">
           <PlayerHUD
             displayName={user.displayName ?? user.email?.split("@")[0] ?? "Aventurier"}
@@ -378,12 +539,36 @@ export default function SessionView() {
           onClose={() => setShowSceneSelector(false)}
         />
       )}
+
+      {showNpcForge && (
+        <NpcForge onCreate={handleCreateNpc} onClose={() => setShowNpcForge(false)} />
+      )}
     </div>
   );
 }
 
-function TranscriptLine({ message, currentUid }: { message: Message; currentUid: string }) {
+function TranscriptLine({
+  message,
+  currentUid,
+  npcName,
+}: {
+  message: Message;
+  currentUid: string;
+  npcName?: string;
+}) {
   const m = message;
+  if (m.type === "gm" && m.npcId) {
+    return (
+      <div className="fade-in panel p-4 max-w-2xl mr-auto" style={{ borderColor: "rgba(217,185,104,.4)" }}>
+        <div className="eyebrow mb-1" style={{ color: "var(--gold-400)" }}>
+          {npcName ?? "PNJ"}
+        </div>
+        <p className="font-serif italic text-parchment-2 text-[14px] leading-[1.55] m-0 whitespace-pre-wrap">
+          {m.content}
+        </p>
+      </div>
+    );
+  }
   if (m.type === "gm") {
     return (
       <div className="fade-in panel-gold p-5 max-w-3xl mr-auto">

@@ -6,11 +6,14 @@ export interface ScenePreset {
   hint?: string;
 }
 
+const STYLE_PREFIX =
+  "tabletop RPG battlemap in the style of Forgotten Adventures and Mike Schley, strict orthographic top-down bird's eye view, no perspective, no isometric, square map";
+
 const STYLE_SUFFIX =
-  "top-down view tabletop RPG battle map, hand-painted fantasy cartography, parchment and gold color palette, intricate detail, soft warm lighting, square aspect, painterly illustration, no text, no labels, no characters";
+  "richly textured surfaces (stone, wood, grass, dirt, water), hand-painted digital fantasy cartography, soft natural lighting with subtle ambient shadows, dnd 5e battlemap, high detail, photorealistic textures with painterly finish, no characters, no tokens, no creatures, no people, no text, no labels, no grid lines, no UI";
 
 export function buildMapPrompt(scenePrompt: string): string {
-  return `${scenePrompt}, ${STYLE_SUFFIX}`;
+  return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
 export function buildMapUrl(scenePrompt: string, seed: number, size = 1024): string {

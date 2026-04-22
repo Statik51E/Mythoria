@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Character, CurrentScene, TokenPosition } from "../lib/types";
-import { buildPortraitUrl } from "../lib/portrait";
+import type { Character, CurrentScene, Npc, NpcRole, TokenPosition } from "../lib/types";
+import { buildNpcPortraitUrl, buildPortraitUrl } from "../lib/portrait";
 import { buildMapUrl } from "../lib/scenePresets";
 import CharacterPortrait from "./CharacterPortrait";
 
@@ -11,16 +11,30 @@ interface Props {
   isHost: boolean;
   scene?: CurrentScene;
   tokens?: Record<string, TokenPosition>;
-  onMoveToken?: (charId: string, pos: TokenPosition) => void;
+  npcs?: Record<string, Npc>;
+  npcTokens?: Record<string, TokenPosition>;
+  onMoveCharacterToken?: (charId: string, pos: TokenPosition) => void;
+  onMoveNpcToken?: (npcId: string, pos: TokenPosition) => void;
   onOpenSceneSelector?: () => void;
+  onOpenNpcForge?: () => void;
+  onClickNpc?: (npc: Npc) => void;
 }
 
 interface Drag {
-  charId: string;
+  kind: "char" | "npc";
+  id: string;
   pointerId: number;
   offsetX: number;
   offsetY: number;
+  startedAt: number;
+  movedSinceStart: boolean;
 }
+
+const ROLE_RING: Record<NpcRole, { ring: string; glow: string }> = {
+  ally:    { ring: "rgba(109,138,90,.95)",  glow: "rgba(109,138,90,.45)" },
+  neutral: { ring: "rgba(170,160,140,.85)", glow: "rgba(170,160,140,.30)" },
+  hostile: { ring: "rgba(206,82,68,.95)",   glow: "rgba(206,82,68,.45)"  },
+};
 
 export default function SceneStage({
   campaignName,
@@ -29,60 +43,99 @@ export default function SceneStage({
   isHost,
   scene,
   tokens,
-  onMoveToken,
+  npcs,
+  npcTokens,
+  onMoveCharacterToken,
+  onMoveNpcToken,
   onOpenSceneSelector,
+  onOpenNpcForge,
+  onClickNpc,
 }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
-  const [localTokens, setLocalTokens] = useState<Record<string, TokenPosition>>({});
+  const [localCharTokens, setLocalCharTokens] = useState<Record<string, TokenPosition>>({});
+  const [localNpcTokens, setLocalNpcTokens] = useState<Record<string, TokenPosition>>({});
 
-  // Sync incoming tokens into local state when not dragging (so remote moves arrive smoothly)
   useEffect(() => {
-    if (!drag) setLocalTokens(tokens ?? {});
+    if (!drag) setLocalCharTokens(tokens ?? {});
   }, [tokens, drag]);
+  useEffect(() => {
+    if (!drag) setLocalNpcTokens(npcTokens ?? {});
+  }, [npcTokens, drag]);
 
   const mapUrl = useMemo(
     () => (scene ? buildMapUrl(scene.prompt, scene.seed, 1024) : null),
     [scene]
   );
 
-  function defaultPosition(i: number, total: number): TokenPosition {
-    // Spread evenly along the bottom edge
+  const npcList = useMemo(() => Object.values(npcs ?? {}), [npcs]);
+
+  function defaultCharPos(i: number, total: number): TokenPosition {
     const padding = 0.12;
     const span = 1 - padding * 2;
     const x = total === 1 ? 0.5 : padding + (i / (total - 1)) * span;
     return { x, y: 0.78 };
   }
-
-  function getPos(charId: string, fallbackIdx: number): TokenPosition {
-    return localTokens[charId] ?? defaultPosition(fallbackIdx, characters.length);
+  function defaultNpcPos(i: number, total: number): TokenPosition {
+    const padding = 0.18;
+    const span = 1 - padding * 2;
+    const x = total === 1 ? 0.5 : padding + (i / (total - 1)) * span;
+    return { x, y: 0.32 };
+  }
+  function getCharPos(id: string, idx: number): TokenPosition {
+    return localCharTokens[id] ?? defaultCharPos(idx, characters.length);
+  }
+  function getNpcPos(id: string, idx: number): TokenPosition {
+    return localNpcTokens[id] ?? defaultNpcPos(idx, npcList.length);
   }
 
-  function startDrag(e: React.PointerEvent, charId: string) {
+  function startDrag(e: React.PointerEvent, kind: "char" | "npc", id: string) {
     const stage = stageRef.current;
     if (!stage) return;
-    const ch = characters.find((c) => c.id === charId);
-    if (!ch) return;
-    const canMove = isHost || ch.ownerUid === currentUid;
-    if (!canMove || !onMoveToken) return;
 
+    const canMove =
+      kind === "char"
+        ? (() => {
+            const ch = characters.find((c) => c.id === id);
+            return Boolean(ch) && (isHost || ch!.ownerUid === currentUid) && Boolean(onMoveCharacterToken);
+          })()
+        : isHost && Boolean(onMoveNpcToken);
+
+    // Always start a "click candidate" so we can fire onClickNpc on a non-drag tap.
     const rect = stage.getBoundingClientRect();
-    const pos = getPos(charId, characters.findIndex((c) => c.id === charId));
+    const pos =
+      kind === "char"
+        ? getCharPos(id, characters.findIndex((c) => c.id === id))
+        : getNpcPos(id, npcList.findIndex((n) => n.id === id));
     const tokenX = pos.x * rect.width + rect.left;
     const tokenY = pos.y * rect.height + rect.top;
     setDrag({
-      charId,
+      kind,
+      id,
       pointerId: e.pointerId,
       offsetX: e.clientX - tokenX,
       offsetY: e.clientY - tokenY,
+      startedAt: Date.now(),
+      movedSinceStart: false,
     });
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    if (canMove) {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    }
   }
 
   function moveDrag(e: React.PointerEvent) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const stage = stageRef.current;
     if (!stage) return;
+    const canMove =
+      drag.kind === "char"
+        ? (() => {
+            const ch = characters.find((c) => c.id === drag.id);
+            return Boolean(ch) && (isHost || ch!.ownerUid === currentUid) && Boolean(onMoveCharacterToken);
+          })()
+        : isHost && Boolean(onMoveNpcToken);
+    if (!canMove) return;
+
     const rect = stage.getBoundingClientRect();
     const x = (e.clientX - drag.offsetX - rect.left) / rect.width;
     const y = (e.clientY - drag.offsetY - rect.top) / rect.height;
@@ -90,21 +143,36 @@ export default function SceneStage({
       x: Math.max(0.04, Math.min(0.96, x)),
       y: Math.max(0.04, Math.min(0.96, y)),
     };
-    setLocalTokens((t) => ({ ...t, [drag.charId]: clamped }));
+    if (drag.kind === "char") {
+      setLocalCharTokens((t) => ({ ...t, [drag.id]: clamped }));
+    } else {
+      setLocalNpcTokens((t) => ({ ...t, [drag.id]: clamped }));
+    }
+    if (!drag.movedSinceStart) setDrag({ ...drag, movedSinceStart: true });
   }
 
   function endDrag(e: React.PointerEvent) {
     if (!drag || e.pointerId !== drag.pointerId) return;
-    const finalPos = localTokens[drag.charId];
-    if (finalPos && onMoveToken) {
-      onMoveToken(drag.charId, finalPos);
+
+    const wasClick = !drag.movedSinceStart && Date.now() - drag.startedAt < 350;
+
+    if (wasClick && drag.kind === "npc") {
+      const npc = npcs?.[drag.id];
+      if (npc && onClickNpc) onClickNpc(npc);
+    } else if (drag.movedSinceStart) {
+      if (drag.kind === "char") {
+        const finalPos = localCharTokens[drag.id];
+        if (finalPos && onMoveCharacterToken) onMoveCharacterToken(drag.id, finalPos);
+      } else {
+        const finalPos = localNpcTokens[drag.id];
+        if (finalPos && onMoveNpcToken) onMoveNpcToken(drag.id, finalPos);
+      }
     }
     setDrag(null);
   }
 
   return (
     <div className="absolute inset-0 z-0 overflow-hidden">
-      {/* Background layer: AI map or fallback parchment */}
       {mapUrl ? (
         <div ref={stageRef} className="absolute inset-0">
           <img
@@ -113,13 +181,28 @@ export default function SceneStage({
             className="absolute inset-0 w-full h-full object-cover"
             draggable={false}
           />
+          {/* Battlemap 1-inch grid overlay */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, rgba(0,0,0,.28) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0,0,0,.28) 1px, transparent 1px)
+              `,
+              backgroundSize: "64px 64px",
+              mixBlendMode: "multiply",
+              opacity: 0.55,
+            }}
+          />
+          {/* Vignette */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
               background:
-                "radial-gradient(ellipse 90% 80% at 50% 55%, transparent 50%, rgba(0,0,0,.55) 100%)",
+                "radial-gradient(ellipse 90% 80% at 50% 55%, transparent 50%, rgba(0,0,0,.6) 100%)",
             }}
           />
+          {/* Subtle scanline texture */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -129,31 +212,52 @@ export default function SceneStage({
             }}
           />
 
-          {/* Tokens */}
           <div
             className="absolute inset-0"
             onPointerMove={drag ? moveDrag : undefined}
             onPointerUp={drag ? endDrag : undefined}
             onPointerCancel={drag ? endDrag : undefined}
           >
-            {characters.map((c, i) => {
-              const pos = getPos(c.id, i);
-              const mine = c.ownerUid === currentUid;
-              const canMove = (isHost || mine) && Boolean(onMoveToken);
+            {/* NPC tokens behind player tokens */}
+            {npcList.map((n, i) => {
+              const pos = getNpcPos(n.id, i);
               return (
                 <div
-                  key={c.id}
+                  key={`npc_${n.id}`}
                   className="absolute"
                   style={{
                     left: `${pos.x * 100}%`,
                     top: `${pos.y * 100}%`,
                     transform: "translate(-50%, -50%)",
-                    cursor: canMove ? (drag?.charId === c.id ? "grabbing" : "grab") : "default",
+                    cursor: "pointer",
+                    touchAction: "none",
+                  }}
+                  onPointerDown={(e) => startDrag(e, "npc", n.id)}
+                >
+                  <NpcToken npc={n} dragging={drag?.kind === "npc" && drag.id === n.id} />
+                </div>
+              );
+            })}
+
+            {/* Character tokens on top */}
+            {characters.map((c, i) => {
+              const pos = getCharPos(c.id, i);
+              const mine = c.ownerUid === currentUid;
+              const canMove = (isHost || mine) && Boolean(onMoveCharacterToken);
+              return (
+                <div
+                  key={`char_${c.id}`}
+                  className="absolute"
+                  style={{
+                    left: `${pos.x * 100}%`,
+                    top: `${pos.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    cursor: canMove ? (drag?.id === c.id ? "grabbing" : "grab") : "default",
                     touchAction: canMove ? "none" : undefined,
                   }}
-                  onPointerDown={(e) => canMove && startDrag(e, c.id)}
+                  onPointerDown={(e) => canMove && startDrag(e, "char", c.id)}
                 >
-                  <CharacterToken character={c} mine={mine} dragging={drag?.charId === c.id} />
+                  <CharacterToken character={c} mine={mine} dragging={drag?.kind === "char" && drag.id === c.id} />
                 </div>
               );
             })}
@@ -171,15 +275,28 @@ export default function SceneStage({
         </div>
       </div>
 
-      {/* MJ scene change button */}
-      {isHost && onOpenSceneSelector && (
-        <button
-          onClick={onOpenSceneSelector}
-          className="absolute top-16 right-4 z-10 panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
-          title="Changer la scène"
-        >
-          🗺 {scene ? "Changer la scène" : "Choisir une scène"}
-        </button>
+      {/* MJ controls */}
+      {isHost && (
+        <div className="absolute top-16 right-4 z-10 flex flex-col gap-2 items-end">
+          {onOpenSceneSelector && (
+            <button
+              onClick={onOpenSceneSelector}
+              className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
+              title="Changer la scène"
+            >
+              🗺 {scene ? "Changer la scène" : "Choisir une scène"}
+            </button>
+          )}
+          {onOpenNpcForge && (
+            <button
+              onClick={onOpenNpcForge}
+              className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
+              title="Faire entrer un PNJ"
+            >
+              + Ajouter un PNJ
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -322,6 +439,62 @@ function CharacterToken({
         style={{ background: "rgba(0,0,0,.55)" }}
       >
         {character.name}
+      </div>
+    </div>
+  );
+}
+
+function NpcToken({ npc, dragging = false }: { npc: Npc; dragging?: boolean }) {
+  const initials = npc.name
+    .split(/\s+/)
+    .map((s) => s[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const portraitUrl = buildNpcPortraitUrl(npc, 192);
+  const { ring, glow } = ROLE_RING[npc.role];
+
+  return (
+    <div
+      className="flex flex-col items-center gap-1 fade-in select-none"
+      style={{ filter: dragging ? "brightness(1.15)" : undefined }}
+    >
+      <div
+        className="rounded-full p-[3px]"
+        style={{
+          background: `radial-gradient(circle, ${ring}, ${ring} 80%, transparent)`,
+          boxShadow: dragging
+            ? `0 0 48px ${glow}, 0 0 0 4px rgba(0,0,0,.4)`
+            : `0 0 28px ${glow}, 0 4px 10px rgba(0,0,0,.5)`,
+          transition: "box-shadow 160ms ease",
+        }}
+      >
+        {portraitUrl ? (
+          <CharacterPortrait
+            src={portraitUrl}
+            alt={npc.name}
+            size={56}
+            rounded="full"
+            fallbackInitials={initials}
+          />
+        ) : (
+          <div
+            className="w-[56px] h-[56px] rounded-full flex items-center justify-center font-serif text-[20px] text-parchment"
+            style={{
+              background: "radial-gradient(circle at 35% 30%, #3a2818, #110a04)",
+              boxShadow: "inset 0 0 10px rgba(0,0,0,.6)",
+            }}
+          >
+            {initials || "?"}
+          </div>
+        )}
+      </div>
+      <div
+        className="font-mono text-[9px] tracking-label uppercase text-parchment-2 text-center max-w-[90px] truncate px-1.5 py-0.5 rounded-sm"
+        style={{ background: "rgba(0,0,0,.55)" }}
+      >
+        {npc.name}
       </div>
     </div>
   );

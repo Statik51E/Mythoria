@@ -1,4 +1,4 @@
-import type { Message } from "../lib/types";
+import type { Message, SuggestedAction } from "../lib/types";
 
 export type QuickAction = "speak" | "act" | "spell" | "roll";
 
@@ -9,6 +9,8 @@ interface Props {
   onAskGM: () => void;
   canAsk: boolean;
   onQuickAction: (kind: QuickAction) => void;
+  onSuggestedAction: (action: SuggestedAction) => void;
+  onApplySceneSuggestion?: () => void;
   hasCharacter: boolean;
 }
 
@@ -19,8 +21,13 @@ export default function NarrationPanel({
   onAskGM,
   canAsk,
   onQuickAction,
+  onSuggestedAction,
+  onApplySceneSuggestion,
   hasCharacter,
 }: Props) {
+  const dynamic = message?.suggestedActions ?? [];
+  const sceneSuggestion = message?.sceneSuggestion;
+
   return (
     <aside className="relative z-10 w-[300px] shrink-0 border-l border-hairline bg-ink-900/75 backdrop-blur-md flex flex-col">
       <div className="p-5 border-b border-rule">
@@ -35,10 +42,52 @@ export default function NarrationPanel({
             La lanterne vacille. La voix du Maître n'a pas encore retenti.
           </p>
         )}
+
+        {sceneSuggestion && isHost && onApplySceneSuggestion && (
+          <button
+            onClick={onApplySceneSuggestion}
+            className="mt-4 w-full panel-gold p-3 hover:border-gold-300 transition-colors text-left fade-in"
+          >
+            <div className="font-mono text-[10px] tracking-label uppercase text-gold-300 mb-1">
+              🗺 Le MJ propose une nouvelle scène
+            </div>
+            <div className="font-serif text-[14px] text-parchment leading-tight">
+              {sceneSuggestion.label}
+            </div>
+            <div className="font-mono text-[9px] tracking-label uppercase text-gold-400 mt-2">
+              Cliquer pour appliquer →
+            </div>
+          </button>
+        )}
       </div>
 
       <div className="p-5 flex-1 overflow-y-auto scrollbar-thin">
-        <div className="eyebrow mb-2">Actions rapides</div>
+        {dynamic.length > 0 && (
+          <>
+            <div className="eyebrow mb-2">Suggestions du MJ</div>
+            <div className="space-y-2 font-mono text-[11px] tracking-label uppercase mb-5">
+              {dynamic.map((a, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSuggestedAction(a)}
+                  disabled={!hasCharacter}
+                  className={`group w-full flex items-center justify-between panel-gold px-3 py-2 transition-colors ${
+                    !hasCharacter
+                      ? "cursor-not-allowed opacity-50"
+                      : "cursor-pointer hover:border-gold-300"
+                  }`}
+                  title={a.prompt}
+                >
+                  <span className="text-gold-200 group-hover:text-gold-100 truncate">{a.label}</span>
+                  <span className="text-gold-400/60 text-[9px] shrink-0 ml-2">→</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="eyebrow mb-2">Actions de base</div>
         <div className="space-y-2 font-mono text-[11px] tracking-label uppercase">
           <ActionRow
             label="Parler"
@@ -82,7 +131,7 @@ export default function NarrationPanel({
             {thinking ? "MJ réfléchit..." : "MJ, à toi"}
           </button>
           <p className="font-mono text-[10px] tracking-label uppercase text-ink-400 mt-2 text-center">
-            Appel Groq · hôte uniquement
+            Le MJ répond automatiquement à chaque action
           </p>
         </div>
       )}

@@ -68,3 +68,20 @@ export function buildPortraitUrl(input: PortraitInput, seed: number, size = 512)
 export function newSeed(): number {
   return Math.floor(Math.random() * 1_000_000);
 }
+
+export function buildNpcPortraitUrl(
+  npc: { race?: RaceId; classId?: ClassId; appearance?: Partial<Appearance>; name?: string; portraitSeed?: number },
+  size = 192
+): string | null {
+  if (!npc.portraitSeed) return null;
+  return buildPortraitUrl(
+    {
+      race: npc.race,
+      classId: npc.classId,
+      appearance: npc.appearance,
+      name: npc.name,
+    },
+    npc.portraitSeed,
+    size
+  );
+}
