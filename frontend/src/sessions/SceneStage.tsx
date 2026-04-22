@@ -1,8 +1,12 @@
-interface Props { campaignName: string }
+import type { Character } from "../lib/types";
 
-// Placeholder scene stage: a subtle top-down lantern-lit stone floor.
-// In V2 this becomes a real map render. For now it's atmospheric CSS only.
-export default function SceneStage({ campaignName: _ }: Props) {
+interface Props {
+  campaignName: string;
+  characters: Character[];
+  currentUid: string;
+}
+
+export default function SceneStage({ campaignName: _, characters, currentUid }: Props) {
   return (
     <div className="absolute inset-0 z-0 pointer-events-none" aria-hidden="true">
       <div
@@ -15,7 +19,6 @@ export default function SceneStage({ campaignName: _ }: Props) {
           `,
         }}
       />
-      {/* subtle grain */}
       <div
         className="absolute inset-0"
         style={{
@@ -23,26 +26,64 @@ export default function SceneStage({ campaignName: _ }: Props) {
           mixBlendMode: "overlay",
         }}
       />
-      {/* token cluster hint — placeholder for future map tokens */}
-      <div className="absolute inset-0 flex items-center justify-center gap-8 opacity-30">
-        <Token color="gold" />
-        <Token color="gold" />
-        <Token color="gold" />
-        <Token color="ember" />
+      {characters.length === 0 ? (
+        <div className="absolute inset-0 flex items-center justify-center gap-8 opacity-30">
+          <PlaceholderToken />
+          <PlaceholderToken />
+          <PlaceholderToken />
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex items-end gap-10 flex-wrap justify-center max-w-3xl">
+            {characters.map((c) => (
+              <CharacterToken key={c.id} character={c} mine={c.ownerUid === currentUid} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CharacterToken({ character, mine }: { character: Character; mine: boolean }) {
+  const initials = character.name
+    .split(/\s+/)
+    .map((s) => s[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const border = mine ? "rgba(217,185,104,.85)" : "rgba(109,138,90,.7)";
+  const glow = mine ? "rgba(217,185,104,.35)" : "rgba(109,138,90,.25)";
+  const bg = mine
+    ? "radial-gradient(circle at 35% 30%, #4a3618, #1a0e04)"
+    : "radial-gradient(circle at 35% 30%, #2a3a1f, #0c1408)";
+  return (
+    <div className="flex flex-col items-center gap-2 fade-in">
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center font-serif text-[18px] text-parchment"
+        style={{
+          border: `2px solid ${border}`,
+          background: bg,
+          boxShadow: `0 0 24px ${glow}, inset 0 0 8px rgba(0,0,0,.6)`,
+        }}
+      >
+        {initials || "?"}
+      </div>
+      <div className="font-mono text-[10px] tracking-label uppercase text-ink-300 text-center max-w-[80px] truncate">
+        {character.name}
       </div>
     </div>
   );
 }
 
-function Token({ color }: { color: "gold" | "ember" }) {
-  const border = color === "gold" ? "rgba(217,185,104,.7)" : "rgba(200,90,58,.8)";
-  const bg = color === "gold"
-    ? "radial-gradient(circle at 35% 30%, #3a2a14, #120a04)"
-    : "radial-gradient(circle at 35% 30%, #3a140a, #120404)";
+function PlaceholderToken() {
   return (
     <div
       className="w-7 h-7 rounded-full"
-      style={{ border: `2px solid ${border}`, background: bg, boxShadow: "0 0 12px rgba(0,0,0,.6)" }}
+      style={{
+        border: "2px dashed rgba(150,140,120,.3)",
+        background: "transparent",
+      }}
     />
   );
 }

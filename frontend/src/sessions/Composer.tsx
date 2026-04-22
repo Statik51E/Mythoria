@@ -1,12 +1,26 @@
-import { useState, KeyboardEvent } from "react";
+import { useState, useEffect, useRef, KeyboardEvent } from "react";
 
 interface Props {
   onSend: (content: string) => Promise<void>;
+  prefill?: string;
+  prefillToken?: number;
 }
 
-export default function Composer({ onSend }: Props) {
+export default function Composer({ onSend, prefill, prefillToken }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (prefillToken === undefined || prefill === undefined) return;
+    setText(prefill);
+    requestAnimationFrame(() => {
+      const el = taRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, [prefillToken, prefill]);
 
   async function send() {
     const trimmed = text.trim();
@@ -31,6 +45,7 @@ export default function Composer({ onSend }: Props) {
     <div className="flex-1 panel-gold p-3 shadow-panel flex flex-col gap-2">
       <div className="label">Ton action</div>
       <textarea
+        ref={taRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}

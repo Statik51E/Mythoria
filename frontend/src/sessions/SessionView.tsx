@@ -1,13 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { getCampaign, watchMessages, postMessage } from "../lib/firestore";
+import {
+  getCampaign,
+  watchMessages,
+  postMessage,
+  listCharacters,
+  createCharacter,
+} from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
-import type { Campaign, Message } from "../lib/types";
-import NarrationPanel from "./NarrationPanel";
+import type { Campaign, Character, Message } from "../lib/types";
+import NarrationPanel, { QuickAction } from "./NarrationPanel";
 import PlayerHUD from "./PlayerHUD";
 import Composer from "./Composer";
 import SceneStage from "./SceneStage";
+import CharacterForge from "./CharacterForge";
 
 const SYSTEM_PROMPT = `Tu es le maître du jeu d'une campagne de TTRPG fantasy.
 Réponds en français, ton narratif vivant, court et évocateur (2-4 phrases max).
@@ -15,13 +22,24 @@ Décris les conséquences des actions des joueurs, fais parler les PNJ en italiq
 Ne tranche jamais à la place du joueur. Demande un jet de dé quand l'issue est incertaine.
 Pas de listes à puces — seulement de la prose.`;
 
+const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
+  speak: "Je dis : « ",
+  act: "Je ",
+  spell: "Je lance le sort ",
+};
+
 export default function SessionView() {
   const { campaignId, sessionId } = useParams<{ campaignId: string; sessionId: string }>();
   const { user, logout } = useAuth();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<string | undefined>();
+  const [prefillToken, setPrefillToken] = useState(0);
+  const [showForge, setShowForge] = useState(false);
+  const [forgeAutoOpened, setForgeAutoOpened] = useState(false);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -32,6 +50,24 @@ export default function SessionView() {
     if (!campaignId || !sessionId) return;
     return watchMessages(campaignId, sessionId, setMessages);
   }, [campaignId, sessionId]);
+
+  useEffect(() => {
+    if (!campaignId) return;
+    listCharacters(campaignId).then(setCharacters);
+  }, [campaignId]);
+
+  const myCharacter = useMemo(
+    () => characters.find((c) => c.ownerUid === user?.uid) ?? null,
+    [characters, user?.uid]
+  );
+
+  useEffect(() => {
+    if (!user || !campaign) return;
+    if (!myCharacter && !forgeAutoOpened) {
+      setShowForge(true);
+      setForgeAutoOpened(true);
+    }
+  }, [user, campaign, myCharacter, forgeAutoOpened]);
 
   if (!campaign || !campaignId || !sessionId || !user) {
     return (
@@ -55,7 +91,10 @@ export default function SessionView() {
     setThinking(true);
     try {
       const transcript: GroqMessage[] = [
-        { role: "system", content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.` },
+        {
+          role: "system",
+          content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.`,
+        },
         ...messages.map((m): GroqMessage => ({
           role: m.type === "gm" ? "assistant" : "user",
           content: m.type === "gm" ? m.content : `[${m.type}] ${m.content}`,
@@ -74,11 +113,36 @@ export default function SessionView() {
     }
   }
 
+  async function handleQuickAction(kind: QuickAction) {
+    if (!campaignId || !sessionId || !user) return;
+    if (kind === "roll") {
+      const value = Math.floor(Math.random() * 20) + 1;
+      const who = myCharacter?.name ?? user.displayName ?? "Aventurier";
+      await postMessage(
+        campaignId,
+        sessionId,
+        user.uid,
+        `${who} lance 1d20 → ${value}${value === 20 ? " (réussite critique !)" : value === 1 ? " (échec critique !)" : ""}`,
+        "dice"
+      );
+      return;
+    }
+    setPrefill(PREFILLS[kind]);
+    setPrefillToken((n) => n + 1);
+  }
+
+  async function handleForge(name: string, className: string) {
+    if (!campaignId || !user) return;
+    await createCharacter(campaignId, user.uid, name, className);
+    const updated = await listCharacters(campaignId);
+    setCharacters(updated);
+    setShowForge(false);
+  }
+
   return (
     <div className="min-h-screen relative flex flex-col overflow-hidden">
-      <SceneStage campaignName={campaign.name} />
+      <SceneStage campaignName={campaign.name} characters={characters} currentUid={user.uid} />
 
-      {/* top strip */}
       <header className="relative z-10 h-12 border-b border-hairline bg-ink-900/70 backdrop-blur-md flex items-center justify-between px-5">
         <div className="flex items-center gap-4">
           <Link
@@ -104,9 +168,7 @@ export default function SessionView() {
         </div>
       </header>
 
-      {/* main stage area */}
       <div className="relative z-10 flex-1 flex">
-        {/* left: transcript column (narration history) */}
         <div className="flex-1 overflow-y-auto scrollbar-thin px-8 py-6 space-y-3 pb-[180px]">
           {messages.length === 0 ? (
             <div className="max-w-lg mx-auto mt-20 text-center">
@@ -128,26 +190,36 @@ export default function SessionView() {
           )}
         </div>
 
-        {/* right: narration MJ latest pinned */}
         <NarrationPanel
           message={lastGm}
           isHost={isHost}
           thinking={thinking}
           onAskGM={askGM}
           canAsk={messages.length > 0}
+          onQuickAction={handleQuickAction}
+          hasCharacter={Boolean(myCharacter)}
         />
       </div>
 
-      {/* bottom HUD + composer */}
       <div className="absolute bottom-0 left-0 right-[300px] z-20 p-4">
-        {error && (
-          <div className="mb-2 chip chip-ember">{error}</div>
-        )}
+        {error && <div className="mb-2 chip chip-ember">{error}</div>}
         <div className="flex gap-3 items-end">
-          <PlayerHUD displayName={user.displayName ?? user.email?.split("@")[0] ?? "Aventurier"} />
-          <Composer onSend={send} />
+          <PlayerHUD
+            displayName={user.displayName ?? user.email?.split("@")[0] ?? "Aventurier"}
+            character={myCharacter}
+            onForge={() => setShowForge(true)}
+          />
+          <Composer onSend={send} prefill={prefill} prefillToken={prefillToken} />
         </div>
       </div>
+
+      {showForge && (
+        <CharacterForge
+          onCreate={handleForge}
+          onClose={() => setShowForge(false)}
+          dismissible={Boolean(myCharacter)}
+        />
+      )}
     </div>
   );
 }

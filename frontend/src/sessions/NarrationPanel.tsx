@@ -1,14 +1,26 @@
 import type { Message } from "../lib/types";
 
+export type QuickAction = "speak" | "act" | "spell" | "roll";
+
 interface Props {
   message: Message | undefined;
   isHost: boolean;
   thinking: boolean;
   onAskGM: () => void;
   canAsk: boolean;
+  onQuickAction: (kind: QuickAction) => void;
+  hasCharacter: boolean;
 }
 
-export default function NarrationPanel({ message, isHost, thinking, onAskGM, canAsk }: Props) {
+export default function NarrationPanel({
+  message,
+  isHost,
+  thinking,
+  onAskGM,
+  canAsk,
+  onQuickAction,
+  hasCharacter,
+}: Props) {
   return (
     <aside className="relative z-10 w-[300px] shrink-0 border-l border-hairline bg-ink-900/75 backdrop-blur-md flex flex-col">
       <div className="p-5 border-b border-rule">
@@ -28,11 +40,36 @@ export default function NarrationPanel({ message, isHost, thinking, onAskGM, can
       <div className="p-5 flex-1 overflow-y-auto scrollbar-thin">
         <div className="eyebrow mb-2">Actions rapides</div>
         <div className="space-y-2 font-mono text-[11px] tracking-label uppercase">
-          <ActionRow label="Parler" hint="PNJ · dialogue" />
-          <ActionRow label="Agir" hint="Libre · narration" />
-          <ActionRow label="Sort" hint="Magie · coût mana" />
-          <ActionRow label="Jet 1d20" hint="Test · compétence" />
+          <ActionRow
+            label="Parler"
+            hint="PNJ · dialogue"
+            disabled={!hasCharacter}
+            onClick={() => onQuickAction("speak")}
+          />
+          <ActionRow
+            label="Agir"
+            hint="Libre · narration"
+            disabled={!hasCharacter}
+            onClick={() => onQuickAction("act")}
+          />
+          <ActionRow
+            label="Sort"
+            hint="Magie · coût mana"
+            disabled={!hasCharacter}
+            onClick={() => onQuickAction("spell")}
+          />
+          <ActionRow
+            label="Jet 1d20"
+            hint="Test · compétence"
+            disabled={!hasCharacter}
+            onClick={() => onQuickAction("roll")}
+          />
         </div>
+        {!hasCharacter && (
+          <p className="mt-3 font-serif italic text-ink-400 text-[12px]">
+            Forge d'abord ton personnage pour agir.
+          </p>
+        )}
       </div>
 
       {isHost && (
@@ -53,11 +90,30 @@ export default function NarrationPanel({ message, isHost, thinking, onAskGM, can
   );
 }
 
-function ActionRow({ label, hint }: { label: string; hint: string }) {
+function ActionRow({
+  label,
+  hint,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  hint: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="group flex items-center justify-between panel px-3 py-2 cursor-not-allowed opacity-60">
-      <span className="text-parchment">{label}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`group w-full flex items-center justify-between panel px-3 py-2 transition-colors ${
+        disabled
+          ? "cursor-not-allowed opacity-50"
+          : "cursor-pointer hover:border-gold-500/50 hover:bg-ink-800/50"
+      }`}
+    >
+      <span className="text-parchment group-hover:text-gold-300">{label}</span>
       <span className="text-ink-400 text-[9px]">{hint}</span>
-    </div>
+    </button>
   );
 }
