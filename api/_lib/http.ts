@@ -17,6 +17,8 @@ export function handleError(res: VercelResponse, err: unknown): void {
     res.status(err.status).json({ error: err.message });
     return;
   }
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
   console.error("Unhandled error", err);
-  res.status(500).json({ error: "Internal error." });
+  res.status(500).json({ error: message, stack });
 }
