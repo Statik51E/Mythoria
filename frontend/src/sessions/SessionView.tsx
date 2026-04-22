@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -9,12 +9,13 @@ import {
   createCharacter,
 } from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
-import type { Campaign, Character, Message } from "../lib/types";
+import type { Campaign, Character, Message, MessageType } from "../lib/types";
 import NarrationPanel, { QuickAction } from "./NarrationPanel";
 import PlayerHUD from "./PlayerHUD";
 import Composer from "./Composer";
 import SceneStage from "./SceneStage";
 import CharacterForge from "./CharacterForge";
+import DiceRoll from "./DiceRoll";
 
 const SYSTEM_PROMPT = `Tu es le maître du jeu d'une campagne de TTRPG fantasy.
 Réponds en français, ton narratif vivant, court et évocateur (2-4 phrases max).
@@ -28,6 +29,11 @@ const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
   spell: "Je lance le sort ",
 };
 
+interface PendingRoll {
+  value: number;
+  rollerName: string;
+}
+
 export default function SessionView() {
   const { campaignId, sessionId } = useParams<{ campaignId: string; sessionId: string }>();
   const { user, logout } = useAuth();
@@ -40,6 +46,8 @@ export default function SessionView() {
   const [prefillToken, setPrefillToken] = useState(0);
   const [showForge, setShowForge] = useState(false);
   const [forgeAutoOpened, setForgeAutoOpened] = useState(false);
+  const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
+  const askingRef = useRef(false);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -79,18 +87,13 @@ export default function SessionView() {
   const isHost = campaign.hostUid === user.uid;
   const lastGm = [...messages].reverse().find((m) => m.type === "gm");
 
-  async function send(content: string) {
-    if (!campaignId || !sessionId || !user) return;
-    setError(null);
-    await postMessage(campaignId, sessionId, user.uid, content, "player");
-  }
-
-  async function askGM() {
-    if (!campaignId || !sessionId) return;
+  async function askGM(extra?: { type: MessageType; content: string }) {
+    if (!campaignId || !sessionId || askingRef.current) return;
+    askingRef.current = true;
     setError(null);
     setThinking(true);
     try {
-      const transcript: GroqMessage[] = [
+      const baseTranscript: GroqMessage[] = [
         {
           role: "system",
           content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.`,
@@ -100,16 +103,29 @@ export default function SessionView() {
           content: m.type === "gm" ? m.content : `[${m.type}] ${m.content}`,
         })),
       ];
+      if (extra) {
+        baseTranscript.push({ role: "user", content: `[${extra.type}] ${extra.content}` });
+      }
       await callGroq({
         campaignId,
         sessionId,
-        messages: transcript,
+        messages: baseTranscript,
         persistAs: "gm",
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Le MJ a perdu sa voix.");
     } finally {
       setThinking(false);
+      askingRef.current = false;
+    }
+  }
+
+  async function send(content: string) {
+    if (!campaignId || !sessionId || !user) return;
+    setError(null);
+    await postMessage(campaignId, sessionId, user.uid, content, "player");
+    if (isHost) {
+      await askGM({ type: "player", content });
     }
   }
 
@@ -118,13 +134,15 @@ export default function SessionView() {
     if (kind === "roll") {
       const value = Math.floor(Math.random() * 20) + 1;
       const who = myCharacter?.name ?? user.displayName ?? "Aventurier";
-      await postMessage(
-        campaignId,
-        sessionId,
-        user.uid,
-        `${who} lance 1d20 → ${value}${value === 20 ? " (réussite critique !)" : value === 1 ? " (échec critique !)" : ""}`,
-        "dice"
-      );
+      setPendingRoll({ value, rollerName: who });
+      const diceText = `${who} lance 1d20 → ${value}${value === 20 ? " (réussite critique !)" : value === 1 ? " (échec critique !)" : ""}`;
+      await postMessage(campaignId, sessionId, user.uid, diceText, "dice");
+      if (isHost) {
+        // Wait for the dice animation to play before MJ reacts.
+        setTimeout(() => {
+          askGM({ type: "dice", content: diceText });
+        }, 2400);
+      }
       return;
     }
     setPrefill(PREFILLS[kind]);
@@ -194,7 +212,7 @@ export default function SessionView() {
           message={lastGm}
           isHost={isHost}
           thinking={thinking}
-          onAskGM={askGM}
+          onAskGM={() => askGM()}
           canAsk={messages.length > 0}
           onQuickAction={handleQuickAction}
           hasCharacter={Boolean(myCharacter)}
@@ -218,6 +236,14 @@ export default function SessionView() {
           onCreate={handleForge}
           onClose={() => setShowForge(false)}
           dismissible={Boolean(myCharacter)}
+        />
+      )}
+
+      {pendingRoll && (
+        <DiceRoll
+          finalValue={pendingRoll.value}
+          rollerName={pendingRoll.rollerName}
+          onDone={() => setPendingRoll(null)}
         />
       )}
     </div>
