@@ -20,6 +20,7 @@ import {
   getRace,
 } from "../lib/characterPresets";
 import { buildPortraitUrl, newSeed } from "../lib/portrait";
+import { rollStarterInventory } from "../lib/starterItems";
 import type {
   Appearance,
   Character,
@@ -156,6 +157,7 @@ export default function CharacterForge({ onCreate, onClose, dismissible = false,
     setBusy(true);
     setError(null);
     try {
+      const { inventory, equipped } = rollStarterInventory(classId);
       const data: Omit<Character, "id"> = {
         ownerUid,
         name: name.trim(),
@@ -168,7 +170,12 @@ export default function CharacterForge({ onCreate, onClose, dismissible = false,
         appearance,
         portraitSeed: seed,
         portraitPrompt: portraitUrl,
-        inventory: [],
+        inventory,
+        equipment: {
+          weapon: equipped.weapon ?? null,
+          armor: equipped.armor ?? null,
+          accessory: equipped.accessory ?? null,
+        },
       };
       await onCreate(data);
     } catch (e) {

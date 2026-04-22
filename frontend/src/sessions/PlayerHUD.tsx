@@ -7,9 +7,10 @@ interface Props {
   displayName: string;
   character?: Character | null;
   onForge?: () => void;
+  onOpenInventory?: () => void;
 }
 
-export default function PlayerHUD({ displayName, character, onForge }: Props) {
+export default function PlayerHUD({ displayName, character, onForge, onOpenInventory }: Props) {
   const name = character?.name ?? displayName;
   const subtitle = character ? `${character.className} · niv. ${character.level}` : "Sans personnage";
   const initials = name
@@ -58,6 +59,16 @@ export default function PlayerHUD({ displayName, character, onForge }: Props) {
           <div className="mt-2 space-y-1">
             <Bar label="PV" value={72} color="ember" />
             <Bar label="MANA" value={48} color="arcane" />
+            {onOpenInventory && (
+              <button
+                onClick={onOpenInventory}
+                className="mt-1 font-mono text-[10px] tracking-label uppercase text-gold-400 hover:text-gold-300 flex items-center gap-1"
+                title="Ouvrir le sac"
+              >
+                <span>🎒</span>
+                <span>Sac · {character.inventory?.length ?? 0}</span>
+              </button>
+            )}
           </div>
         ) : (
           onForge && (

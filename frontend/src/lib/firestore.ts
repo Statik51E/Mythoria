@@ -83,6 +83,24 @@ export async function createSession(campaignId: string): Promise<string> {
   return ref.id;
 }
 
+export function watchSession(
+  campaignId: string,
+  sessionId: string,
+  cb: (session: SessionDoc | null) => void
+): Unsubscribe {
+  return onSnapshot(doc(db, `campaigns/${campaignId}/sessions`, sessionId), (snap) => {
+    cb(snap.exists() ? ({ id: snap.id, ...(snap.data() as Omit<SessionDoc, "id">) }) : null);
+  });
+}
+
+export async function updateSession(
+  campaignId: string,
+  sessionId: string,
+  partial: Partial<Omit<SessionDoc, "id">>
+): Promise<void> {
+  await updateDoc(doc(db, `campaigns/${campaignId}/sessions`, sessionId), partial as Record<string, unknown>);
+}
+
 export async function listCharacters(campaignId: string, constraints: QueryConstraint[] = []): Promise<Character[]> {
   const snap = await getDocs(
     query(collection(db, `campaigns/${campaignId}/characters`), ...constraints)
@@ -96,4 +114,21 @@ export async function createCharacter(
 ): Promise<string> {
   const ref = await addDoc(collection(db, `campaigns/${campaignId}/characters`), data);
   return ref.id;
+}
+
+export async function updateCharacter(
+  campaignId: string,
+  characterId: string,
+  partial: Partial<Omit<Character, "id">>
+): Promise<void> {
+  await updateDoc(doc(db, `campaigns/${campaignId}/characters`, characterId), partial as Record<string, unknown>);
+}
+
+export function watchCharacters(
+  campaignId: string,
+  cb: (characters: Character[]) => void
+): Unsubscribe {
+  return onSnapshot(collection(db, `campaigns/${campaignId}/characters`), (snap) => {
+    cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Character, "id">) })));
+  });
 }

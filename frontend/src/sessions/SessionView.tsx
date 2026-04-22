@@ -5,18 +5,34 @@ import {
   getCampaign,
   watchMessages,
   postMessage,
-  listCharacters,
+  watchCharacters,
   createCharacter,
+  updateCharacter,
+  watchSession,
+  updateSession,
 } from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
-import type { Campaign, Character, Message, MessageType } from "../lib/types";
+import type {
+  Campaign,
+  Character,
+  CurrentScene,
+  EquipSlot,
+  Equipment,
+  Item,
+  Message,
+  MessageType,
+  SessionDoc,
+  TokenPosition,
+} from "../lib/types";
 type NewCharacter = Omit<Character, "id">;
 import NarrationPanel, { QuickAction } from "./NarrationPanel";
 import PlayerHUD from "./PlayerHUD";
 import Composer from "./Composer";
 import SceneStage from "./SceneStage";
+import SceneSelector from "./SceneSelector";
 import CharacterForge from "./CharacterForge";
 import DiceRoll from "./DiceRoll";
+import Inventory, { ItemAction } from "./Inventory";
 
 const SYSTEM_PROMPT = `Tu es le maître du jeu d'une campagne de TTRPG fantasy.
 Réponds en français, ton narratif vivant, court et évocateur (2-4 phrases max).
@@ -48,7 +64,17 @@ export default function SessionView() {
   const [showForge, setShowForge] = useState(false);
   const [forgeAutoOpened, setForgeAutoOpened] = useState(false);
   const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showSceneSelector, setShowSceneSelector] = useState(false);
+  const [session, setSession] = useState<SessionDoc | null>(null);
   const askingRef = useRef(false);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages.length, thinking]);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -61,8 +87,13 @@ export default function SessionView() {
   }, [campaignId, sessionId]);
 
   useEffect(() => {
+    if (!campaignId || !sessionId) return;
+    return watchSession(campaignId, sessionId, setSession);
+  }, [campaignId, sessionId]);
+
+  useEffect(() => {
     if (!campaignId) return;
-    listCharacters(campaignId).then(setCharacters);
+    return watchCharacters(campaignId, setCharacters);
   }, [campaignId]);
 
   const myCharacter = useMemo(
@@ -80,7 +111,7 @@ export default function SessionView() {
 
   if (!campaign || !campaignId || !sessionId || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-screen flex items-center justify-center">
         <div className="eyebrow animate-pulse">La table s'éveille...</div>
       </div>
     );
@@ -94,10 +125,13 @@ export default function SessionView() {
     setError(null);
     setThinking(true);
     try {
+      const sceneLine = session?.currentScene
+        ? `\nScène actuelle : ${session.currentScene.label}.`
+        : "";
       const baseTranscript: GroqMessage[] = [
         {
           role: "system",
-          content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.`,
+          content: `${SYSTEM_PROMPT}\n\nCampagne : ${campaign?.name}.\nPitch : ${campaign?.description ?? "aucun"}.${sceneLine}`,
         },
         ...messages.map((m): GroqMessage => ({
           role: m.type === "gm" ? "assistant" : "user",
@@ -153,14 +187,90 @@ export default function SessionView() {
   async function handleForge(data: NewCharacter) {
     if (!campaignId || !user) return;
     await createCharacter(campaignId, data);
-    const updated = await listCharacters(campaignId);
-    setCharacters(updated);
     setShowForge(false);
   }
 
+  async function handlePickScene(scene: CurrentScene) {
+    if (!campaignId || !sessionId || !user) return;
+    await updateSession(campaignId, sessionId, { currentScene: scene });
+    await postMessage(
+      campaignId,
+      sessionId,
+      user.uid,
+      `Le décor change : ${scene.label}.`,
+      "system"
+    );
+    setShowSceneSelector(false);
+  }
+
+  async function handleMoveToken(charId: string, pos: TokenPosition) {
+    if (!campaignId || !sessionId) return;
+    const nextTokens = { ...(session?.tokens ?? {}), [charId]: pos };
+    await updateSession(campaignId, sessionId, { tokens: nextTokens });
+  }
+
+  async function handleItemAction(item: Item, action: ItemAction) {
+    if (!campaignId || !sessionId || !user || !myCharacter) return;
+    const ch = myCharacter;
+    const equipment: Equipment = ch.equipment ?? {};
+    const slot = item.slot;
+
+    let newInventory = ch.inventory;
+    let newEquipment: Equipment = equipment;
+    let line = "";
+
+    if (action === "use") {
+      const remainingQty = (item.quantity ?? 1) - 1;
+      newInventory = remainingQty > 0
+        ? ch.inventory.map((i) => (i.id === item.id ? { ...i, quantity: remainingQty } : i))
+        : ch.inventory.filter((i) => i.id !== item.id);
+      line = `${ch.name} utilise ${item.name}.`;
+    } else if (action === "equip" && slot) {
+      const previouslyEquipped = equipment[slot];
+      newEquipment = { ...equipment, [slot]: item };
+      if (previouslyEquipped) {
+        line = `${ch.name} range ${previouslyEquipped.name} et équipe ${item.name}.`;
+      } else {
+        line = `${ch.name} équipe ${item.name}.`;
+      }
+    } else if (action === "unequip" && slot) {
+      newEquipment = { ...equipment, [slot]: null };
+      line = `${ch.name} range ${item.name}.`;
+    } else if (action === "drop") {
+      newInventory = ch.inventory.filter((i) => i.id !== item.id);
+      const slots: EquipSlot[] = ["weapon", "armor", "accessory"];
+      const eqCopy: Equipment = { ...equipment };
+      for (const s of slots) {
+        if (eqCopy[s]?.id === item.id) eqCopy[s] = null;
+      }
+      newEquipment = eqCopy;
+      line = `${ch.name} jette ${item.name}.`;
+    }
+
+    await updateCharacter(campaignId, ch.id, {
+      inventory: newInventory,
+      equipment: newEquipment,
+    });
+    if (line) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
+      if (isHost && action === "use") {
+        await askGM({ type: "system", content: line });
+      }
+    }
+  }
+
   return (
-    <div className="min-h-screen relative flex flex-col overflow-hidden">
-      <SceneStage campaignName={campaign.name} characters={characters} currentUid={user.uid} />
+    <div className="h-screen relative flex flex-col overflow-hidden">
+      <SceneStage
+        campaignName={campaign.name}
+        characters={characters}
+        currentUid={user.uid}
+        isHost={isHost}
+        scene={session?.currentScene}
+        tokens={session?.tokens}
+        onMoveToken={handleMoveToken}
+        onOpenSceneSelector={() => setShowSceneSelector(true)}
+      />
 
       <header className="relative z-10 h-12 border-b border-hairline bg-ink-900/70 backdrop-blur-md flex items-center justify-between px-5">
         <div className="flex items-center gap-4">
@@ -187,8 +297,11 @@ export default function SessionView() {
         </div>
       </header>
 
-      <div className="relative z-10 flex-1 flex">
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-8 py-6 space-y-3 pb-[180px]">
+      <div className="relative z-10 flex-1 flex min-h-0">
+        <div
+          ref={messagesScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-8 py-6 space-y-3 pb-[180px]"
+        >
           {messages.length === 0 ? (
             <div className="max-w-lg mx-auto mt-20 text-center">
               <div className="eyebrow mb-3">Page blanche</div>
@@ -227,6 +340,7 @@ export default function SessionView() {
             displayName={user.displayName ?? user.email?.split("@")[0] ?? "Aventurier"}
             character={myCharacter}
             onForge={() => setShowForge(true)}
+            onOpenInventory={() => setShowInventory(true)}
           />
           <Composer onSend={send} prefill={prefill} prefillToken={prefillToken} />
         </div>
@@ -246,6 +360,22 @@ export default function SessionView() {
           finalValue={pendingRoll.value}
           rollerName={pendingRoll.rollerName}
           onDone={() => setPendingRoll(null)}
+        />
+      )}
+
+      {showInventory && myCharacter && (
+        <Inventory
+          character={myCharacter}
+          onClose={() => setShowInventory(false)}
+          onAction={handleItemAction}
+        />
+      )}
+
+      {showSceneSelector && (
+        <SceneSelector
+          current={session?.currentScene}
+          onPick={handlePickScene}
+          onClose={() => setShowSceneSelector(false)}
         />
       )}
     </div>

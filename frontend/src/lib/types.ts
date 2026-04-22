@@ -42,6 +42,26 @@ export interface Appearance {
   clothing: string;
 }
 
+export type ItemType = "weapon" | "armor" | "accessory" | "potion" | "scroll" | "tool" | "misc";
+export type EquipSlot = "weapon" | "armor" | "accessory";
+
+export interface Item {
+  id: string;
+  name: string;
+  type: ItemType;
+  description: string;
+  slot?: EquipSlot;
+  flavor?: string;
+  consumable?: boolean;
+  quantity?: number;
+}
+
+export interface Equipment {
+  weapon?: Item | null;
+  armor?: Item | null;
+  accessory?: Item | null;
+}
+
 export interface Character {
   id: string;
   ownerUid: string;
@@ -55,7 +75,8 @@ export interface Character {
   appearance?: Appearance;
   portraitSeed?: number;
   portraitPrompt?: string;
-  inventory: string[];
+  inventory: Item[];
+  equipment?: Equipment;
 }
 
 export interface Npc {
@@ -66,12 +87,28 @@ export interface Npc {
   visibleToPlayers: boolean;
 }
 
+export interface TokenPosition {
+  x: number;
+  y: number;
+}
+
+export interface CurrentScene {
+  id: string;
+  label: string;
+  prompt: string;
+  seed: number;
+  category?: string;
+  setAt?: Timestamp;
+}
+
 export interface SessionDoc {
   id: string;
   startedAt: Timestamp;
   endedAt?: Timestamp;
   activePlayerUid?: string;
   sceneSummary?: string;
+  currentScene?: CurrentScene;
+  tokens?: Record<string, TokenPosition>;
 }
 
 export type MessageType = "player" | "gm" | "system" | "dice";

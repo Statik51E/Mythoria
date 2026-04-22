@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import {
-  getCampaign, listSessions, createSession, listCharacters, createCharacter,
+  getCampaign, listSessions, createSession, watchCharacters, createCharacter,
 } from "../lib/firestore";
 import { buildPortraitUrl } from "../lib/portrait";
 import type { Campaign, Character, SessionDoc } from "../lib/types";
@@ -23,8 +23,8 @@ export default function CampaignDetail() {
     (async () => {
       setCampaign(await getCampaign(campaignId));
       setSessions(await listSessions(campaignId));
-      setCharacters(await listCharacters(campaignId));
     })();
+    return watchCharacters(campaignId, setCharacters);
   }, [campaignId]);
 
   const myCharacter = useMemo(
@@ -46,7 +46,6 @@ export default function CampaignDetail() {
   async function handleForge(data: Omit<Character, "id">) {
     if (!campaignId) return;
     await createCharacter(campaignId, data);
-    setCharacters(await listCharacters(campaignId));
     setShowForge(false);
   }
 
