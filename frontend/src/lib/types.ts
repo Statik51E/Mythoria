@@ -133,6 +133,13 @@ export interface SceneSuggestion {
   prompt: string;
 }
 
+export interface NpcSpawn {
+  id?: string;
+  name: string;
+  role: NpcRole;
+  description: string;
+}
+
 export interface Message {
   id: string;
   type: MessageType;
@@ -142,6 +149,7 @@ export interface Message {
   tokensUsed?: number;
   suggestedActions?: SuggestedAction[];
   sceneSuggestion?: SceneSuggestion;
+  npcSpawns?: NpcSpawn[];
   npcId?: string;
   interactionNpcId?: string;
 }

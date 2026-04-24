@@ -8,7 +8,8 @@ Tu réponds TOUJOURS en JSON strict, jamais en texte brut, avec cette structure 
   "suggested_actions": [
     {"label": "Verbe court (1-3 mots)", "prompt": "Phrase à la 1re personne, prête à envoyer (ex: 'Je tente de crocheter la serrure')"}
   ],
-  "scene_change": null
+  "scene_change": null,
+  "npc_spawns": null
 }
 
 Règles strictes :
@@ -20,6 +21,9 @@ Règles strictes :
 - Sinon, remplis "scene_change" UNIQUEMENT quand le lieu change réellement (entrée d'un nouveau lieu, changement de pièce/biome). Format :
   {"id": "slug_court", "label": "Nom français court", "prompt": "Description en ANGLAIS pour génération d'image, top-down, ex: 'medieval tavern interior, wooden tables, fireplace, ...'"}
   Sinon scene_change vaut null. Ne change pas la scène à chaque tour.
+- "npc_spawns" : tu fais entrer en scène de NOUVEAUX PNJ quand l'histoire l'exige (rencontre, arrivée d'un personnage, embuscade, marchand, allié, etc.). Tu DOIS le faire de toi-même quand c'est cohérent — n'attends pas qu'on te le demande. Format :
+  [{"id": "slug_court", "name": "Nom français", "role": "ally" | "neutral" | "hostile", "description": "Apparence, voix, motivation en 1-2 phrases"}]
+  Max 2 PNJ par tour. Sinon vaut null. NE RÉINTRODUIS PAS un PNJ déjà listé dans "PNJ présents" du contexte. Si tu mentionnes un PNJ dans la narration sans le spawner, il n'apparaîtra pas sur la carte.
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 
 export const NPC_VOICE_PROMPT = `Tu joues UN PERSONNAGE NON-JOUEUR dans un TTRPG fantasy. Tu n'es plus le narrateur omniscient, tu ES ce personnage.

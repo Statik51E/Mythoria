@@ -27,6 +27,7 @@ import type {
   Item,
   Message,
   Npc,
+  NpcSpawn,
   SceneSuggestion,
   SessionDoc,
   SuggestedAction,
@@ -75,8 +76,8 @@ export default function SessionView() {
   const [session, setSession] = useState<SessionDoc | null>(null);
   const askingRef = useRef(false);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
-  const lastReactedMessageIdRef = useRef<string | null>(null);
   const appliedSceneSuggestionRef = useRef<string | null>(null);
+  const appliedNpcSpawnsRef = useRef<string | null>(null);
   const bootstrappedRef = useRef(false);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
 
@@ -128,22 +129,30 @@ export default function SessionView() {
   const lastGm = [...messages].reverse().find((m) => m.type === "gm" && !m.npcId);
 
   // ---------- Auto-trigger MJ/NPC for host on new player input ----------
+  // Scans for the most recent player/dice message that lands AFTER the last
+  // MJ response. This survives the race where bootstrap + scene-apply post
+  // messages around the player's input.
   useEffect(() => {
     if (!isHost || thinking || messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.type === "gm") return;
-    if (last.authorUid === "system") return;
-    if (lastReactedMessageIdRef.current === last.id) return;
-    lastReactedMessageIdRef.current = last.id;
 
-    const delay = last.type === "dice" ? 2400 : 250;
+    let lastGmIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type === "gm") { lastGmIdx = i; break; }
+    }
+
+    let pending: Message | null = null;
+    for (let i = messages.length - 1; i > lastGmIdx; i--) {
+      const m = messages[i];
+      if (m.type === "player" || m.type === "dice") { pending = m; break; }
+    }
+    if (!pending) return;
+
+    const delay = pending.type === "dice" ? 2400 : 250;
+    const target = pending;
     const timer = setTimeout(() => {
-      if (last.interactionNpcId) {
-        const npc = session?.npcs?.[last.interactionNpcId];
-        if (npc) {
-          callNpc(npc);
-          return;
-        }
+      if (target.interactionNpcId) {
+        const npc = session?.npcs?.[target.interactionNpcId];
+        if (npc) { callNpc(npc); return; }
       }
       callMj();
     }, delay);
@@ -159,6 +168,18 @@ export default function SessionView() {
     if (appliedSceneSuggestionRef.current === key) return;
     appliedSceneSuggestionRef.current = key;
     handleApplySceneSuggestion(lastGm.sceneSuggestion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
+  // ---------- Auto-apply MJ NPC spawns (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.npcSpawns || lastGm.npcSpawns.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.npcSpawns.map((s) => s.id ?? s.name).join(",")}`;
+    if (appliedNpcSpawnsRef.current === key) return;
+    appliedNpcSpawnsRef.current = key;
+    handleApplyNpcSpawns(lastGm.npcSpawns);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGm, isHost]);
 
   // ---------- Bootstrap: auto-call MJ when session opens empty (host only) ----------
@@ -301,6 +322,42 @@ export default function SessionView() {
     };
     await updateSession(campaignId, sessionId, { currentScene: scene });
     await postMessage(campaignId, sessionId, user.uid, `Le décor change : ${scene.label}.`, "system");
+  }
+
+  async function handleApplyNpcSpawns(spawns: NpcSpawn[]) {
+    if (!campaignId || !sessionId || !user) return;
+    const existing = session?.npcs ?? {};
+    const existingByName = new Map(
+      Object.values(existing).map((n) => [n.name.toLowerCase(), n])
+    );
+    const next = { ...existing };
+    const added: Npc[] = [];
+    for (const s of spawns) {
+      if (existingByName.has(s.name.toLowerCase())) continue;
+      const proposedId = s.id && !existing[s.id] ? s.id : null;
+      const id =
+        proposedId ?? `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const npc: Npc = {
+        id,
+        name: s.name,
+        role: s.role,
+        description: s.description,
+        portraitSeed: Math.floor(Math.random() * 1_000_000),
+      };
+      next[id] = npc;
+      added.push(npc);
+    }
+    if (added.length === 0) return;
+    await updateSession(campaignId, sessionId, { npcs: next });
+    for (const n of added) {
+      await postMessage(
+        campaignId,
+        sessionId,
+        user.uid,
+        `${n.name} entre en scène.`,
+        "system"
+      );
+    }
   }
 
   async function handleForge(data: NewCharacter) {

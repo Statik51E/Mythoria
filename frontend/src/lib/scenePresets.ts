@@ -16,12 +16,12 @@ export function buildMapPrompt(scenePrompt: string): string {
   return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
-export function buildMapUrl(scenePrompt: string, seed: number, size = 1024): string {
+export function buildMapUrl(scenePrompt: string, seed: number, width = 1792, height = 1024): string {
   const enc = encodeURIComponent(buildMapPrompt(scenePrompt));
   const params = new URLSearchParams({
     seed: String(seed),
-    width: String(size),
-    height: String(size),
+    width: String(width),
+    height: String(height),
     nologo: "true",
     enhance: "true",
     model: "flux",

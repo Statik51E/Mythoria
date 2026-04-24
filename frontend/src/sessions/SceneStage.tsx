@@ -60,7 +60,7 @@ export default function SceneStage({
   }, [npcTokens, drag]);
 
   const mapUrl = useMemo(
-    () => (scene ? buildMapUrl(scene.prompt, scene.seed, 1024) : null),
+    () => (scene ? buildMapUrl(scene.prompt, scene.seed) : null),
     [scene]
   );
 
