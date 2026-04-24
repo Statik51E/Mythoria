@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import {
-  getCampaign, listSessions, createSession, watchCharacters, createCharacter,
+  getCampaign, listSessions, createSession, watchCharacters, createCharacter, deleteCampaign,
 } from "../lib/firestore";
 import { buildPortraitUrl } from "../lib/portrait";
 import type { Campaign, Character, SessionDoc } from "../lib/types";
@@ -47,6 +47,16 @@ export default function CampaignDetail() {
     if (!campaignId) return;
     await createCharacter(campaignId, data);
     setShowForge(false);
+  }
+
+  async function handleDelete() {
+    if (!campaignId || !campaign) return;
+    const ok = window.confirm(
+      `Supprimer définitivement « ${campaign.name} » ?\n\nToutes les sessions, personnages et messages seront perdus.`
+    );
+    if (!ok) return;
+    await deleteCampaign(campaignId);
+    navigate("/");
   }
 
   return (
@@ -134,6 +144,22 @@ export default function CampaignDetail() {
           </p>
         )}
       </section>
+
+      {isHost && (
+        <section className="pt-8 border-t border-rule">
+          <div className="eyebrow mb-2" style={{ color: "var(--ember)" }}>Zone dangereuse</div>
+          <button
+            onClick={handleDelete}
+            className="font-mono text-[11px] tracking-label uppercase px-4 py-2 rounded-sm border transition-colors"
+            style={{ borderColor: "var(--ember)", color: "var(--ember)" }}
+          >
+            Supprimer la campagne
+          </button>
+          <p className="font-serif italic text-ink-400 text-[12px] mt-2">
+            Action définitive. Sessions, personnages et messages seront effacés.
+          </p>
+        </section>
+      )}
 
       {showForge && user && (
         <CharacterForge

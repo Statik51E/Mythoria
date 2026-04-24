@@ -15,8 +15,6 @@ interface Props {
   npcTokens?: Record<string, TokenPosition>;
   onMoveCharacterToken?: (charId: string, pos: TokenPosition) => void;
   onMoveNpcToken?: (npcId: string, pos: TokenPosition) => void;
-  onOpenSceneSelector?: () => void;
-  onOpenNpcForge?: () => void;
   onClickNpc?: (npc: Npc) => void;
 }
 
@@ -47,8 +45,6 @@ export default function SceneStage({
   npcTokens,
   onMoveCharacterToken,
   onMoveNpcToken,
-  onOpenSceneSelector,
-  onOpenNpcForge,
   onClickNpc,
 }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -275,29 +271,6 @@ export default function SceneStage({
         </div>
       </div>
 
-      {/* MJ controls */}
-      {isHost && (
-        <div className="absolute top-16 right-[316px] z-10 flex flex-col gap-2 items-end">
-          {onOpenSceneSelector && (
-            <button
-              onClick={onOpenSceneSelector}
-              className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
-              title="Changer la scène"
-            >
-              🗺 {scene ? "Changer la scène" : "Choisir une scène"}
-            </button>
-          )}
-          {onOpenNpcForge && (
-            <button
-              onClick={onOpenNpcForge}
-              className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
-              title="Faire entrer un PNJ"
-            >
-              + Ajouter un PNJ
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs, query, where, orderBy,
-  serverTimestamp, onSnapshot, Unsubscribe, QueryConstraint,
+  serverTimestamp, onSnapshot, Unsubscribe, QueryConstraint, writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { Campaign, Character, Message, SessionDoc } from "./types";
@@ -38,6 +38,28 @@ export function watchMyCampaigns(uid: string, cb: (campaigns: Campaign[]) => voi
 export async function getCampaign(campaignId: string): Promise<Campaign | null> {
   const snap = await getDoc(doc(db, "campaigns", campaignId));
   return snap.exists() ? ({ id: snap.id, ...(snap.data() as Omit<Campaign, "id">) }) : null;
+}
+
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  // Firestore Web SDK has no recursive delete — clean leaves first, then trunk.
+  const sessSnap = await getDocs(collection(db, `campaigns/${campaignId}/sessions`));
+
+  for (const s of sessSnap.docs) {
+    const msgs = await getDocs(collection(db, `campaigns/${campaignId}/sessions/${s.id}/messages`));
+    if (!msgs.empty) {
+      const msgBatch = writeBatch(db);
+      msgs.docs.forEach((m) => msgBatch.delete(m.ref));
+      await msgBatch.commit();
+    }
+  }
+
+  const charSnap = await getDocs(collection(db, `campaigns/${campaignId}/characters`));
+
+  const batch = writeBatch(db);
+  sessSnap.docs.forEach((d) => batch.delete(d.ref));
+  charSnap.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, "campaigns", campaignId));
+  await batch.commit();
 }
 
 export function watchMessages(

@@ -129,7 +129,7 @@ export default function SessionView() {
 
   // ---------- Auto-trigger MJ/NPC for host on new player input ----------
   useEffect(() => {
-    if (!isHost || messages.length === 0) return;
+    if (!isHost || thinking || messages.length === 0) return;
     const last = messages[messages.length - 1];
     if (last.type === "gm") return;
     if (last.authorUid === "system") return;
@@ -149,7 +149,7 @@ export default function SessionView() {
     }, delay);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, isHost]);
+  }, [messages, isHost, thinking]);
 
   // ---------- Auto-apply MJ scene suggestion (host only) ----------
   useEffect(() => {
@@ -411,8 +411,6 @@ export default function SessionView() {
         npcTokens={session?.npcTokens}
         onMoveCharacterToken={handleMoveCharacterToken}
         onMoveNpcToken={handleMoveNpcToken}
-        onOpenSceneSelector={() => setShowSceneSelector(true)}
-        onOpenNpcForge={() => setShowNpcForge(true)}
         onClickNpc={handleClickNpc}
       />
 
@@ -440,6 +438,25 @@ export default function SessionView() {
           </button>
         </div>
       </header>
+
+      {isHost && (
+        <div className="absolute top-16 right-[316px] z-30 flex flex-col gap-2 items-end">
+          <button
+            onClick={() => setShowSceneSelector(true)}
+            className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
+            title="Changer la scène"
+          >
+            🗺 {session?.currentScene ? "Changer la scène" : "Choisir une scène"}
+          </button>
+          <button
+            onClick={() => setShowNpcForge(true)}
+            className="panel px-3 py-2 font-mono text-[10px] tracking-label uppercase text-gold-300 hover:border-gold-500 hover:text-gold-200 transition-colors"
+            title="Faire entrer un PNJ"
+          >
+            + Ajouter un PNJ
+          </button>
+        </div>
+      )}
 
       <div className="relative z-10 flex-1 flex min-h-0">
         <div

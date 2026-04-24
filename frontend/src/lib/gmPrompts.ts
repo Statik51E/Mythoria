@@ -16,10 +16,10 @@ Règles strictes :
 - "suggested_actions" : 3 à 4 actions CONTEXTUELLES à la scène actuelle (jamais "lancer 1d20" qui est toujours dispo via le bouton dédié).
 - Les actions doivent refléter le monde : si une porte est devant, propose "Crocheter" / "Forcer" / "Frapper". Si un PNJ est là, propose "Parler à [son nom]". Adapte-toi à ce qui vient d'être dit ou décrit.
 - Ne tranche jamais à la place du joueur. Demande un jet de dé en l'incluant comme suggested_action ("Tester la Discrétion") quand l'issue est incertaine.
-- Si la scène change visuellement (entrée d'un nouveau lieu, changement de pièce/biome), remplis "scene_change" avec :
+- Si AUCUNE scène n'est encore posée (premier tour de la campagne), tu DOIS remplir "scene_change" pour définir le lieu d'ouverture. C'est obligatoire.
+- Sinon, remplis "scene_change" UNIQUEMENT quand le lieu change réellement (entrée d'un nouveau lieu, changement de pièce/biome). Format :
   {"id": "slug_court", "label": "Nom français court", "prompt": "Description en ANGLAIS pour génération d'image, top-down, ex: 'medieval tavern interior, wooden tables, fireplace, ...'"}
-  Sinon scene_change vaut null.
-- Ne change la scène que si nécessaire (changement de lieu réel), pas à chaque tour.
+  Sinon scene_change vaut null. Ne change pas la scène à chaque tour.
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 
 export const NPC_VOICE_PROMPT = `Tu joues UN PERSONNAGE NON-JOUEUR dans un TTRPG fantasy. Tu n'es plus le narrateur omniscient, tu ES ce personnage.
@@ -53,6 +53,8 @@ export function buildContextSuffix(args: {
   }
   if (args.scene) {
     parts.push(`Scène actuelle : ${args.scene.label}.`);
+  } else {
+    parts.push(`AUCUNE scène n'est encore posée. Définis la scène d'ouverture maintenant via scene_change.`);
   }
   if (args.myCharacter) {
     const c = args.myCharacter;
