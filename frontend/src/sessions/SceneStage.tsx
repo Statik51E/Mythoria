@@ -277,7 +277,7 @@ export default function SceneStage({
 
       {/* MJ controls */}
       {isHost && (
-        <div className="absolute top-16 right-4 z-10 flex flex-col gap-2 items-end">
+        <div className="absolute top-16 right-[316px] z-10 flex flex-col gap-2 items-end">
           {onOpenSceneSelector && (
             <button
               onClick={onOpenSceneSelector}

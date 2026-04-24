@@ -77,6 +77,8 @@ export default function SessionView() {
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const lastReactedMessageIdRef = useRef<string | null>(null);
   const appliedSceneSuggestionRef = useRef<string | null>(null);
+  const bootstrappedRef = useRef(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   useEffect(() => {
     const el = messagesScrollRef.current;
@@ -91,7 +93,12 @@ export default function SessionView() {
 
   useEffect(() => {
     if (!campaignId || !sessionId) return;
-    return watchMessages(campaignId, sessionId, setMessages);
+    setMessagesLoaded(false);
+    bootstrappedRef.current = false;
+    return watchMessages(campaignId, sessionId, (msgs) => {
+      setMessages(msgs);
+      setMessagesLoaded(true);
+    });
   }, [campaignId, sessionId]);
 
   useEffect(() => {
@@ -151,8 +158,16 @@ export default function SessionView() {
     const key = `${lastGm.id}:${lastGm.sceneSuggestion.label}`;
     if (appliedSceneSuggestionRef.current === key) return;
     appliedSceneSuggestionRef.current = key;
-    // Don't auto-apply — let host accept via the button. (Avoid surprise scene swaps.)
+    handleApplySceneSuggestion(lastGm.sceneSuggestion);
   }, [lastGm, isHost]);
+
+  // ---------- Bootstrap: auto-call MJ when session opens empty (host only) ----------
+  useEffect(() => {
+    if (!isHost || !messagesLoaded || messages.length > 0) return;
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    callMj();
+  }, [isHost, messagesLoaded, messages.length]);
 
   if (!campaign || !campaignId || !sessionId || !user) {
     return (
