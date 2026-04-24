@@ -117,6 +117,43 @@ export default function SessionView() {
     }
   }, [user, campaign, myCharacter, forgeAutoOpened]);
 
+  const isHost = !!campaign && !!user && campaign.hostUid === user.uid;
+  const lastGm = [...messages].reverse().find((m) => m.type === "gm" && !m.npcId);
+
+  // ---------- Auto-trigger MJ/NPC for host on new player input ----------
+  useEffect(() => {
+    if (!isHost || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.type === "gm") return;
+    if (last.authorUid === "system") return;
+    if (lastReactedMessageIdRef.current === last.id) return;
+    lastReactedMessageIdRef.current = last.id;
+
+    const delay = last.type === "dice" ? 2400 : 250;
+    const timer = setTimeout(() => {
+      if (last.interactionNpcId) {
+        const npc = session?.npcs?.[last.interactionNpcId];
+        if (npc) {
+          callNpc(npc);
+          return;
+        }
+      }
+      callMj();
+    }, delay);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isHost]);
+
+  // ---------- Auto-apply MJ scene suggestion (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.sceneSuggestion) return;
+    const key = `${lastGm.id}:${lastGm.sceneSuggestion.label}`;
+    if (appliedSceneSuggestionRef.current === key) return;
+    appliedSceneSuggestionRef.current = key;
+    // Don't auto-apply — let host accept via the button. (Avoid surprise scene swaps.)
+  }, [lastGm, isHost]);
+
   if (!campaign || !campaignId || !sessionId || !user) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -124,11 +161,9 @@ export default function SessionView() {
       </div>
     );
   }
-  const isHost = campaign.hostUid === user.uid;
   const activeNpc: Npc | null = activeInteractionNpcId
     ? session?.npcs?.[activeInteractionNpcId] ?? null
     : null;
-  const lastGm = [...messages].reverse().find((m) => m.type === "gm" && !m.npcId);
 
   // ---------- Groq calls ----------
 
@@ -206,42 +241,6 @@ export default function SessionView() {
       askingRef.current = false;
     }
   }
-
-  // ---------- Auto-trigger MJ/NPC for host on new player input ----------
-
-  useEffect(() => {
-    if (!isHost || messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.type === "gm") return;
-    if (last.authorUid === "system") return;
-    if (lastReactedMessageIdRef.current === last.id) return;
-    lastReactedMessageIdRef.current = last.id;
-
-    const delay = last.type === "dice" ? 2400 : 250;
-    const timer = setTimeout(() => {
-      if (last.interactionNpcId) {
-        const npc = session?.npcs?.[last.interactionNpcId];
-        if (npc) {
-          callNpc(npc);
-          return;
-        }
-      }
-      callMj();
-    }, delay);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, isHost]);
-
-  // ---------- Auto-apply MJ scene suggestion (host only) ----------
-
-  useEffect(() => {
-    if (!isHost) return;
-    if (!lastGm?.sceneSuggestion) return;
-    const key = `${lastGm.id}:${lastGm.sceneSuggestion.label}`;
-    if (appliedSceneSuggestionRef.current === key) return;
-    appliedSceneSuggestionRef.current = key;
-    // Don't auto-apply — let host accept via the button. (Avoid surprise scene swaps.)
-  }, [lastGm, isHost]);
 
   // ---------- Player actions ----------
 
