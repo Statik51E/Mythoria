@@ -60,21 +60,29 @@ export function portraitUrl(
     width: String(size),
     height: String(size),
     nologo: "true",
-    nofeed: "true",
     model,
   });
   return `${POLLINATIONS_BASE}/${enc}?${params.toString()}`;
 }
 
+// DiceBear "adventurer" never fails — small SVG/PNG, instant CDN response.
+// Used as ultimate fallback so NPCs always have *some* visual.
+function diceBearUrl(seed: string | number, size: number): string {
+  return `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(
+    String(seed)
+  )}&size=${size}&backgroundColor=2a2219`;
+}
+
 export function buildPortraitFallbackUrls(
   prompt: string,
   seed: number,
-  size = 512
+  size = 512,
+  diceSeed?: string | number
 ): string[] {
   return [
     portraitUrl(prompt, seed, size, "turbo"),
     portraitUrl(prompt, seed + 1, size, "flux"),
-    portraitUrl(prompt, seed + 2, size, "turbo"),
+    diceBearUrl(diceSeed ?? seed, Math.min(size, 256)),
   ];
 }
 
@@ -126,14 +134,18 @@ export function buildNpcPortraitPrompt(npc: Partial<Npc>): string | null {
   });
 }
 
-export function buildNpcPortraitUrls(npc: Partial<Npc>, size = 256): string[] {
+export function buildNpcPortraitUrls(npc: Partial<Npc>, size = 192): string[] {
   if (!npc.portraitSeed) return [];
   const prompt = buildNpcPortraitPrompt(npc);
-  if (!prompt) return [];
-  return buildPortraitFallbackUrls(prompt, npc.portraitSeed, size);
+  const diceSeed = `${npc.id ?? npc.name ?? "npc"}_${npc.portraitSeed}`;
+  if (!prompt) {
+    // No usable prompt at all — go straight to the procedural avatar.
+    return [diceBearUrl(diceSeed, Math.min(size, 256))];
+  }
+  return buildPortraitFallbackUrls(prompt, npc.portraitSeed, size, diceSeed);
 }
 
-export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 256): string | null {
+export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 192): string | null {
   const urls = buildNpcPortraitUrls(npc, size);
   return urls[0] ?? null;
 }

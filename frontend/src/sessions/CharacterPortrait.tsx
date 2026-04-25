@@ -29,6 +29,19 @@ export default function CharacterPortrait({
     }
   }, [sourcesKey]);
 
+  // Pollinations sometimes hangs forever without firing onError. Force advance.
+  useEffect(() => {
+    if (status !== "loading") return;
+    const t = setTimeout(() => {
+      if (idx + 1 < sources.length) {
+        setIdx(idx + 1);
+      } else {
+        setStatus("error");
+      }
+    }, 10000);
+    return () => clearTimeout(t);
+  }, [status, idx, sources.length]);
+
   const radius = rounded === "full" ? "9999px" : rounded === "md" ? "6px" : "3px";
   const current = sources[idx];
 

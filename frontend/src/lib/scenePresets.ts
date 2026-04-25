@@ -23,25 +23,23 @@ function mapUrl(prompt: string, seed: number, w: number, h: number, model: "flux
     width: String(w),
     height: String(h),
     nologo: "true",
-    nofeed: "true",
     model,
   });
   return `https://image.pollinations.ai/prompt/${enc}?${params.toString()}`;
 }
 
-export function buildMapUrl(scenePrompt: string, seed: number, width = 1280, height = 704): string {
-  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "flux");
+export function buildMapUrl(scenePrompt: string, seed: number, width = 1024, height = 576): string {
+  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "turbo");
 }
 
-// Sizes are multiples of 64 (Flux constraint). Turbo first because it almost
-// never hangs; Flux second for higher quality if turbo failed.
+// 1024×576 is the most stable Pollinations size in our testing. Turbo first
+// (almost never hangs), then flux for quality if turbo failed.
 export function buildMapUrlChain(scenePrompt: string, seed: number): string[] {
   const prompt = buildMapPrompt(scenePrompt);
   return [
-    mapUrl(prompt, seed, 1280, 704, "turbo"),
-    mapUrl(prompt, seed, 1280, 704, "flux"),
-    mapUrl(prompt, seed + 1, 1024, 576, "turbo"),
-    mapUrl(prompt, seed + 2, 1024, 768, "turbo"),
+    mapUrl(prompt, seed, 1024, 576, "turbo"),
+    mapUrl(prompt, seed, 1024, 576, "flux"),
+    mapUrl(prompt, seed + 1, 768, 448, "turbo"),
   ];
 }
 
