@@ -228,7 +228,7 @@ export default function SceneSelector({ current, onPick, onClose }: Props) {
             )}
 
             <p className="font-mono text-[10px] tracking-label uppercase text-ink-400 text-center mt-3">
-              Carte tactique procédurale instantanée · l'image IA s'ajoute par-dessus si elle charge
+              Carte tactique générée selon la scène · l'image IA s'ajoute par-dessus si elle charge
             </p>
           </div>
         </div>

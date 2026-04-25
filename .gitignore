@@ -25,3 +25,8 @@ npm-debug.log*
 # Editors
 .vscode/
 .idea/
+
+# TypeScript build artifacts
+*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
