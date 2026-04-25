@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { playDiceRoll } from "../lib/audio";
 
 interface Props {
   finalValue: number;
@@ -14,6 +15,7 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
     let cancelled = false;
     const start = Date.now();
     const rollDuration = 1400;
+    playDiceRoll(rollDuration);
     const tick = () => {
       if (cancelled) return;
       const elapsed = Date.now() - start;

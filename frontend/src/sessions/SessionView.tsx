@@ -45,6 +45,7 @@ import DiceRoll from "./DiceRoll";
 import Inventory, { ItemAction } from "./Inventory";
 import NpcForge from "./NpcForge";
 import InteractionScene from "./InteractionScene";
+import MusicPlayer from "./MusicPlayer";
 
 const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
   speak: "Je dis : « ",
@@ -702,6 +703,8 @@ export default function SessionView() {
       {showNpcForge && (
         <NpcForge onCreate={handleCreateNpc} onClose={() => setShowNpcForge(false)} />
       )}
+
+      <MusicPlayer scene={session?.currentScene} npcs={session?.npcs} />
     </div>
   );
 }
