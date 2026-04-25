@@ -90,6 +90,12 @@ export function buildPortraitUrl(input: PortraitInput, seed: number, size = 512)
   return portraitUrl(buildPortraitPrompt(input), seed, size);
 }
 
+export function buildPlayerPortraitUrls(input: PortraitInput, seed: number, size = 512): string[] {
+  const prompt = buildPortraitPrompt(input);
+  const diceSeed = `${input.name ?? "player"}_${seed}`;
+  return buildPortraitFallbackUrls(prompt, seed, size, diceSeed);
+}
+
 export function newSeed(): number {
   return Math.floor(Math.random() * 1_000_000);
 }

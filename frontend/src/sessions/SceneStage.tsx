@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Character, CurrentScene, Npc, NpcRole, TokenPosition } from "../lib/types";
-import { buildNpcPortraitUrls, buildPortraitUrl } from "../lib/portrait";
+import { buildNpcPortraitUrls, buildPlayerPortraitUrls } from "../lib/portrait";
 import { buildMapUrlChain } from "../lib/scenePresets";
 import CharacterPortrait from "./CharacterPortrait";
 import ProceduralBattlemap from "./ProceduralBattlemap";
@@ -395,8 +395,8 @@ function CharacterToken({
     .slice(0, 2)
     .toUpperCase();
 
-  const portraitUrl = character.portraitSeed
-    ? buildPortraitUrl(
+  const portraitUrls = character.portraitSeed
+    ? buildPlayerPortraitUrls(
         {
           race: character.race,
           classId: character.classId,
@@ -426,9 +426,9 @@ function CharacterToken({
           transition: "box-shadow 160ms ease",
         }}
       >
-        {portraitUrl ? (
+        {portraitUrls && portraitUrls.length > 0 ? (
           <CharacterPortrait
-            src={portraitUrl}
+            src={portraitUrls}
             alt={character.name}
             size={64}
             rounded="full"
