@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
-  src: string;
+  src: string | string[];
   alt: string;
   size?: number;
   rounded?: "full" | "sm" | "md";
@@ -15,13 +15,31 @@ export default function CharacterPortrait({
   rounded = "md",
   fallbackInitials,
 }: Props) {
+  const sources = Array.isArray(src) ? src : [src];
+  const [idx, setIdx] = useState(0);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const sourcesKey = sources.join("|");
+  const lastKey = useRef<string>("");
 
   useEffect(() => {
-    setStatus("loading");
-  }, [src]);
+    if (lastKey.current !== sourcesKey) {
+      lastKey.current = sourcesKey;
+      setIdx(0);
+      setStatus("loading");
+    }
+  }, [sourcesKey]);
 
   const radius = rounded === "full" ? "9999px" : rounded === "md" ? "6px" : "3px";
+  const current = sources[idx];
+
+  function handleError() {
+    if (idx + 1 < sources.length) {
+      setIdx(idx + 1);
+      setStatus("loading");
+    } else {
+      setStatus("error");
+    }
+  }
 
   return (
     <div
@@ -35,13 +53,14 @@ export default function CharacterPortrait({
         boxShadow: "0 4px 20px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.04)",
       }}
     >
-      {status !== "error" && (
+      {status !== "error" && current && (
         <img
-          src={src}
+          key={current}
+          src={current}
           alt={alt}
           loading="lazy"
           onLoad={() => setStatus("ok")}
-          onError={() => setStatus("error")}
+          onError={handleError}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ opacity: status === "ok" ? 1 : 0, transition: "opacity 320ms ease-out" }}
         />

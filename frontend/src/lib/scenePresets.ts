@@ -7,26 +7,39 @@ export interface ScenePreset {
 }
 
 const STYLE_PREFIX =
-  "tabletop RPG battlemap in the style of Forgotten Adventures and Mike Schley, strict orthographic top-down bird's eye view, no perspective, no isometric, square map";
+  "top-down tabletop RPG battlemap, orthographic bird's eye view, no perspective";
 
 const STYLE_SUFFIX =
-  "richly textured surfaces (stone, wood, grass, dirt, water), hand-painted digital fantasy cartography, soft natural lighting with subtle ambient shadows, dnd 5e battlemap, high detail, photorealistic textures with painterly finish, no characters, no tokens, no creatures, no people, no text, no labels, no grid lines, no UI";
+  "hand-painted digital fantasy cartography in the style of Forgotten Adventures, richly textured surfaces, soft natural lighting, dnd battlemap, high detail, no characters, no people, no creatures, no text, no grid lines";
 
 export function buildMapPrompt(scenePrompt: string): string {
   return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
-export function buildMapUrl(scenePrompt: string, seed: number, width = 1536, height = 768): string {
-  const enc = encodeURIComponent(buildMapPrompt(scenePrompt));
+function mapUrl(prompt: string, seed: number, w: number, h: number, model: "flux" | "turbo"): string {
+  const enc = encodeURIComponent(prompt);
   const params = new URLSearchParams({
     seed: String(seed),
-    width: String(width),
-    height: String(height),
+    width: String(w),
+    height: String(h),
     nologo: "true",
-    enhance: "true",
-    model: "flux",
+    nofeed: "true",
+    model,
   });
   return `https://image.pollinations.ai/prompt/${enc}?${params.toString()}`;
+}
+
+export function buildMapUrl(scenePrompt: string, seed: number, width = 1280, height = 720): string {
+  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "flux");
+}
+
+export function buildMapUrlChain(scenePrompt: string, seed: number): string[] {
+  const prompt = buildMapPrompt(scenePrompt);
+  return [
+    mapUrl(prompt, seed, 1280, 720, "flux"),
+    mapUrl(prompt, seed + 1, 1024, 576, "turbo"),
+    mapUrl(prompt, seed + 2, 1024, 768, "turbo"),
+  ];
 }
 
 export const SCENE_PRESETS: ScenePreset[] = [

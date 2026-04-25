@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Character, CurrentScene, Npc, NpcRole, TokenPosition } from "../lib/types";
-import { buildNpcPortraitUrl, buildPortraitUrl } from "../lib/portrait";
-import { buildMapUrl } from "../lib/scenePresets";
+import { buildNpcPortraitUrls, buildPortraitUrl } from "../lib/portrait";
+import { buildMapUrlChain } from "../lib/scenePresets";
 import CharacterPortrait from "./CharacterPortrait";
 
 interface Props {
@@ -59,10 +59,17 @@ export default function SceneStage({
     if (!drag) setLocalNpcTokens(npcTokens ?? {});
   }, [npcTokens, drag]);
 
-  const mapUrl = useMemo(
-    () => (scene ? buildMapUrl(scene.prompt, scene.seed) : null),
+  const mapUrls = useMemo(
+    () => (scene ? buildMapUrlChain(scene.prompt, scene.seed) : []),
     [scene]
   );
+  const [mapIdx, setMapIdx] = useState(0);
+  const [mapFailed, setMapFailed] = useState(false);
+  useEffect(() => {
+    setMapIdx(0);
+    setMapFailed(false);
+  }, [mapUrls.join("|")]);
+  const mapUrl = mapUrls[mapIdx] ?? null;
 
   const npcList = useMemo(() => Object.values(npcs ?? {}), [npcs]);
 
@@ -167,16 +174,30 @@ export default function SceneStage({
     setDrag(null);
   }
 
+  const hasScene = Boolean(scene);
+  const showMap = mapUrl && !mapFailed;
+
   return (
     <div className="absolute inset-0 z-0 overflow-hidden">
-      {mapUrl ? (
+      {!hasScene ? (
+        <ParchmentFallback campaignName={campaignName} characters={characters} currentUid={currentUid} />
+      ) : (
         <div ref={stageRef} className="absolute inset-0">
-          <img
-            src={mapUrl}
-            alt={scene?.label ?? "scène"}
-            className="absolute inset-0 w-full h-full object-cover"
-            draggable={false}
-          />
+          {showMap ? (
+            <img
+              key={mapUrl}
+              src={mapUrl}
+              alt={scene?.label ?? "scène"}
+              className="absolute inset-0 w-full h-full object-cover"
+              draggable={false}
+              onError={() => {
+                if (mapIdx + 1 < mapUrls.length) setMapIdx(mapIdx + 1);
+                else setMapFailed(true);
+              }}
+            />
+          ) : (
+            <SceneBackdrop label={scene?.label ?? ""} />
+          )}
           {/* Battlemap 1-inch grid overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -259,8 +280,6 @@ export default function SceneStage({
             })}
           </div>
         </div>
-      ) : (
-        <ParchmentFallback campaignName={campaignName} characters={characters} currentUid={currentUid} />
       )}
 
       {/* Scene label */}
@@ -272,6 +291,42 @@ export default function SceneStage({
       </div>
 
     </div>
+  );
+}
+
+function SceneBackdrop({ label }: { label: string; loading?: boolean }) {
+  return (
+    <>
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(1400px 800px at 50% 55%, rgba(96,76,46,.6), transparent 70%),
+            radial-gradient(900px 600px at 25% 30%, rgba(201,162,74,.10), transparent 65%),
+            radial-gradient(900px 600px at 75% 75%, rgba(122,107,200,.08), transparent 65%),
+            linear-gradient(180deg, #1c1612, #0c0906)
+          `,
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.22]"
+        style={{
+          backgroundImage: `
+            linear-gradient(60deg, rgba(217,185,104,.5) 1px, transparent 1px),
+            linear-gradient(-60deg, rgba(217,185,104,.5) 1px, transparent 1px),
+            linear-gradient(0deg, rgba(217,185,104,.5) 1px, transparent 1px)
+          `,
+          backgroundSize: "70px 121px",
+          maskImage: "radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%)",
+          WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%)",
+        }}
+      />
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <p className="font-serif italic text-parchment-2/70 text-[14px] max-w-md text-center px-6">
+          « {label || "Décor"} » — la carte ne s'est pas révélée.
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -425,7 +480,7 @@ function NpcToken({ npc, dragging = false }: { npc: Npc; dragging?: boolean }) {
     .slice(0, 2)
     .toUpperCase();
 
-  const portraitUrl = buildNpcPortraitUrl(npc, 192);
+  const portraitUrls = buildNpcPortraitUrls(npc, 256);
   const { ring, glow } = ROLE_RING[npc.role];
 
   return (
@@ -443,9 +498,9 @@ function NpcToken({ npc, dragging = false }: { npc: Npc; dragging?: boolean }) {
           transition: "box-shadow 160ms ease",
         }}
       >
-        {portraitUrl ? (
+        {portraitUrls.length > 0 ? (
           <CharacterPortrait
-            src={portraitUrl}
+            src={portraitUrls}
             alt={npc.name}
             size={56}
             rounded="full"

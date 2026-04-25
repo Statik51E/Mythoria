@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Message, Npc, SuggestedAction } from "../lib/types";
-import { buildNpcPortraitUrl } from "../lib/portrait";
+import { buildNpcPortraitUrls } from "../lib/portrait";
 import CharacterPortrait from "./CharacterPortrait";
 
 interface Props {
@@ -28,7 +28,7 @@ export default function InteractionScene({
   onSpeak,
   onClose,
 }: Props) {
-  const portraitUrl = buildNpcPortraitUrl(npc, 320);
+  const portraitUrls = buildNpcPortraitUrls(npc, 384);
   const role = ROLE_LABEL[npc.role];
   const dialogueScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,7 +66,7 @@ export default function InteractionScene({
           </button>
         </div>
         <div className="flex flex-col items-center text-center">
-          {portraitUrl ? (
+          {portraitUrls.length > 0 ? (
             <div
               className="rounded-full p-[3px] mb-2"
               style={{
@@ -75,7 +75,7 @@ export default function InteractionScene({
               }}
             >
               <CharacterPortrait
-                src={portraitUrl}
+                src={portraitUrls}
                 alt={npc.name}
                 size={96}
                 rounded="full"
