@@ -191,7 +191,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let suggestedActions: { label: string; prompt: string }[] | undefined;
     let sceneSuggestion: { id?: string; label: string; prompt: string } | undefined;
     let npcSpawns:
-      | { id?: string; name: string; role: "ally" | "neutral" | "hostile"; description: string }[]
+      | {
+          id?: string;
+          name: string;
+          role: "ally" | "neutral" | "hostile";
+          description: string;
+          appearancePrompt?: string;
+        }[]
       | undefined;
 
     if (structured) {
@@ -230,11 +236,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .slice(0, 3)
             .map((n) => {
               const role = n.role === "ally" || n.role === "hostile" ? n.role : "neutral";
+              const ap = (n as { appearance_prompt?: unknown }).appearance_prompt;
               return {
                 id: typeof n.id === "string" ? n.id.slice(0, 40) : undefined,
                 name: String(n.name).slice(0, 40),
                 role,
                 description: String(n.description).slice(0, 400),
+                appearancePrompt: typeof ap === "string" ? ap.slice(0, 600) : undefined,
               };
             });
           if (npcSpawns.length === 0) npcSpawns = undefined;

@@ -77,7 +77,8 @@ export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 192): string | nul
     npc.classId ||
     (npc.appearance && Object.keys(npc.appearance).length > 0);
 
-  if (!hasManualAppearance && npc.description) {
+  const visualText = npc.appearancePrompt ?? npc.description;
+  if (!hasManualAppearance && visualText) {
     const roleHint =
       npc.role === "hostile"
         ? "menacing villain, intimidating"
@@ -87,7 +88,7 @@ export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 192): string | nul
     const prompt = [
       "fantasy character portrait, headshot",
       roleHint,
-      npc.description,
+      visualText,
       "highly detailed, realistic oil painting style, dramatic cinematic side lighting, dark moody background, painterly digital art, artstation quality, intricate textures, depth of field",
     ].join(", ");
     return portraitUrl(prompt, npc.portraitSeed, size);

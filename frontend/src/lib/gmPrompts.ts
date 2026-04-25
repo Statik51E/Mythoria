@@ -22,7 +22,7 @@ Règles strictes :
   {"id": "slug_court", "label": "Nom français court", "prompt": "Description en ANGLAIS du DÉCOR uniquement (architecture, mobilier, sol, éclairage, végétation). JAMAIS de personnages, créatures, PNJ ou animaux dans cette description — ils sont gérés séparément via npc_spawns. Ex: 'medieval tavern interior, wooden tables and benches, central stone fireplace, hanging lanterns, wooden floorboards, kegs against the wall'"}
   Sinon scene_change vaut null. Ne change pas la scène à chaque tour.
 - "npc_spawns" : tu fais entrer en scène de NOUVEAUX PNJ quand l'histoire l'exige (rencontre, arrivée d'un personnage, embuscade, marchand, allié, etc.). Tu DOIS le faire de toi-même quand c'est cohérent — n'attends pas qu'on te le demande. Format :
-  [{"id": "slug_court", "name": "Nom français", "role": "ally" | "neutral" | "hostile", "description": "Apparence, voix, motivation en 1-2 phrases"}]
+  [{"id": "slug_court", "name": "Nom français", "role": "ally" | "neutral" | "hostile", "description": "Apparence, voix, motivation en 1-2 phrases EN FRANÇAIS pour le contexte narratif", "appearance_prompt": "Visual description in ENGLISH for portrait generation. Concrete physical traits: gender, age, race, build, hair, eyes, clothing, weapons, expression. Example: 'old grizzled male human knight, weathered face with deep scars, gray beard, dented plate armor, holding longsword, stern expression'"}]
   Max 2 PNJ par tour. Sinon vaut null. NE RÉINTRODUIS PAS un PNJ déjà listé dans "PNJ présents" du contexte. Si tu mentionnes un PNJ dans la narration sans le spawner, il n'apparaîtra pas sur la carte.
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 

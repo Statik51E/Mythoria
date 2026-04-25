@@ -344,6 +344,7 @@ export default function SessionView() {
         description: s.description,
         portraitSeed: Math.floor(Math.random() * 1_000_000),
       };
+      if (s.appearancePrompt) npc.appearancePrompt = s.appearancePrompt;
       next[id] = npc;
       added.push(npc);
     }

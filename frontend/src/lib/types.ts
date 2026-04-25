@@ -86,6 +86,7 @@ export interface Npc {
   name: string;
   role: NpcRole;
   description: string;
+  appearancePrompt?: string;
   race?: RaceId;
   classId?: ClassId;
   appearance?: Partial<Appearance>;
@@ -138,6 +139,7 @@ export interface NpcSpawn {
   name: string;
   role: NpcRole;
   description: string;
+  appearancePrompt?: string;
 }
 
 export interface Message {
