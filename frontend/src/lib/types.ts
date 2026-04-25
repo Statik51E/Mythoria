@@ -142,6 +142,19 @@ export interface NpcSpawn {
   appearancePrompt?: string;
 }
 
+export interface ItemGrant {
+  name: string;
+  type: ItemType;
+  description: string;
+  slot?: EquipSlot;
+  flavor?: string;
+  consumable?: boolean;
+  quantity?: number;
+  // Optional: name of the character meant to receive it. If absent, the grant
+  // goes to every character in the party (shared loot).
+  character?: string;
+}
+
 export interface Message {
   id: string;
   type: MessageType;
@@ -152,6 +165,7 @@ export interface Message {
   suggestedActions?: SuggestedAction[];
   sceneSuggestion?: SceneSuggestion;
   npcSpawns?: NpcSpawn[];
+  itemGrants?: ItemGrant[];
   npcId?: string;
   interactionNpcId?: string;
 }

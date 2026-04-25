@@ -14,7 +14,8 @@ Tu réponds TOUJOURS en JSON strict, jamais en texte brut, avec cette structure 
     {"label": "Verbe court (1-3 mots)", "prompt": "Phrase à la 1re personne, prête à envoyer (ex: 'Je tente de crocheter la serrure')"}
   ],
   "scene_change": null,
-  "npc_spawns": null
+  "npc_spawns": null,
+  "item_grants": null
 }
 
 Règles strictes :
@@ -50,6 +51,16 @@ NPC_SPAWNS — apparition de PNJ sur la carte :
 - Format complet :
   [{"id": "slug_court", "name": "Nom français", "role": "ally" | "neutral" | "hostile", "description": "Apparence, voix, motivation en 1-2 phrases EN FRANÇAIS pour le contexte narratif", "appearance_prompt": "Visual description in ENGLISH starting with gender + race + class/role, then physical traits, clothing/armor matching role, weapons, facial expression. Reflects the role exactly."}]
 - Max 2 PNJ par tour. Sinon vaut null. NE RÉINTRODUIS PAS un PNJ déjà listé dans "PNJ présents" du contexte. Si tu mentionnes un PNJ dans la narration sans le spawner, il n'apparaîtra pas sur la carte.
+
+ITEM_GRANTS — donner des objets aux personnages :
+- Tu DOIS remplir "item_grants" dès que la narration octroie un objet aux joueurs : trésor trouvé, butin sur un cadavre, achat conclu, récompense de quête, cadeau d'un PNJ, fouille d'un coffre, drop de monstre, etc. Sans cela, l'objet décrit dans la narration n'arrive PAS dans le sac du joueur.
+- Format : [{"name": "Nom français court", "type": "weapon|armor|accessory|potion|scroll|tool|misc", "description": "1-2 phrases sur ses propriétés ET son histoire", "slot": "weapon|armor|accessory" (si équipable), "flavor": "court bonus ou détail évocateur (optionnel)", "consumable": true (pour potions/parchemins à usage unique), "quantity": 1 (par défaut, mets 2-5 pour les flèches/pièces/potions multiples), "character": "Nom du personnage" (optionnel, sinon partagé entre tous)}]
+- Exemples concrets :
+  • Trésor générique : {"name": "Bourse de 30 pièces d'or", "type": "misc", "description": "Une bourse en cuir lourde, gonflée de pièces frappées à l'effigie d'un roi oublié.", "quantity": 1}
+  • Arme trouvée : {"name": "Épée elfique", "type": "weapon", "slot": "weapon", "description": "Lame fine gravée de runes argentées. Plus légère qu'elle n'en a l'air.", "flavor": "+ précis contre les morts-vivants"}
+  • Potion en boutique : {"name": "Potion de soin majeure", "type": "potion", "description": "Liquide rouge vif qui scintille. Restaure beaucoup de PV.", "consumable": true, "quantity": 2}
+  • Récompense ciblée : {"name": "Médaillon du capitaine", "type": "accessory", "slot": "accessory", "description": "Le capitaine te le tend en signe de gratitude.", "character": "Aldric"}
+- Max 4 objets par tour. Sinon vaut null. NE DONNE PAS d'objet déjà présent dans l'inventaire du contexte. Si tu narres "vous trouvez X" sans le mettre dans item_grants, le joueur ne l'aura JAMAIS — donc inclue-le toujours.
 
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 
@@ -90,6 +101,13 @@ export function buildContextSuffix(args: {
   if (args.myCharacter) {
     const c = args.myCharacter;
     parts.push(`Personnage actif : ${c.name} (${c.className}, niv. ${c.level}).`);
+    if (c.inventory && c.inventory.length > 0) {
+      const items = c.inventory
+        .map((it) => `${it.name}${it.quantity && it.quantity > 1 ? ` ×${it.quantity}` : ""}`)
+        .slice(0, 12)
+        .join(", ");
+      parts.push(`Inventaire de ${c.name} : ${items}.`);
+    }
   }
   if (args.npcs && Object.keys(args.npcs).length > 0) {
     const list = Object.values(args.npcs)

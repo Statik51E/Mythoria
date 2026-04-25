@@ -25,6 +25,7 @@ import type {
   EquipSlot,
   Equipment,
   Item,
+  ItemGrant,
   Message,
   Npc,
   NpcSpawn,
@@ -78,6 +79,7 @@ export default function SessionView() {
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const appliedSceneSuggestionRef = useRef<string | null>(null);
   const appliedNpcSpawnsRef = useRef<string | null>(null);
+  const appliedItemGrantsRef = useRef<string | null>(null);
   const bootstrappedRef = useRef(false);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
 
@@ -179,6 +181,17 @@ export default function SessionView() {
     if (appliedNpcSpawnsRef.current === key) return;
     appliedNpcSpawnsRef.current = key;
     handleApplyNpcSpawns(lastGm.npcSpawns);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
+  // ---------- Auto-apply MJ item grants (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.itemGrants || lastGm.itemGrants.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.itemGrants.map((g) => g.name).join(",")}`;
+    if (appliedItemGrantsRef.current === key) return;
+    appliedItemGrantsRef.current = key;
+    handleApplyItemGrants(lastGm.itemGrants);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGm, isHost]);
 
@@ -358,6 +371,63 @@ export default function SessionView() {
         `${n.name} entre en scène.`,
         "system"
       );
+    }
+  }
+
+  async function handleApplyItemGrants(grants: ItemGrant[]) {
+    if (!campaignId || !sessionId || !user || characters.length === 0) return;
+
+    function makeItem(g: ItemGrant): Item {
+      const slug = g.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24) || "item";
+      const item: Item = {
+        id: `${g.type}_${slug}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: g.name,
+        type: g.type,
+        description: g.description,
+      };
+      if (g.slot) item.slot = g.slot;
+      if (g.flavor) item.flavor = g.flavor;
+      if (g.consumable) item.consumable = true;
+      if (g.quantity && g.quantity > 1) item.quantity = g.quantity;
+      return item;
+    }
+
+    function findTarget(name?: string): Character | null {
+      if (!name) return null;
+      const needle = name.toLowerCase().trim();
+      return (
+        characters.find((c) => c.name.toLowerCase() === needle) ??
+        characters.find((c) => c.name.toLowerCase().startsWith(needle)) ??
+        null
+      );
+    }
+
+    // Group grants by target character. Targeted grants go only to the named
+    // character; untargeted grants go to every character (party loot).
+    const updates = new Map<string, { char: Character; items: Item[] }>();
+    const lines: string[] = [];
+    for (const g of grants) {
+      const target = findTarget(g.character);
+      const recipients = target ? [target] : characters;
+      for (const r of recipients) {
+        const item = makeItem(g);
+        if (!updates.has(r.id)) updates.set(r.id, { char: r, items: [] });
+        updates.get(r.id)!.items.push(item);
+      }
+      const qtyLabel = g.quantity && g.quantity > 1 ? ` ×${g.quantity}` : "";
+      lines.push(
+        target
+          ? `${target.name} reçoit : ${g.name}${qtyLabel}.`
+          : `Butin : ${g.name}${qtyLabel}.`
+      );
+    }
+
+    for (const { char, items } of updates.values()) {
+      const nextInventory = [...char.inventory, ...items];
+      await updateCharacter(campaignId, char.id, { inventory: nextInventory });
+    }
+    for (const line of lines) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
     }
   }
 

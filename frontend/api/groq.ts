@@ -199,6 +199,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           appearancePrompt?: string;
         }[]
       | undefined;
+    type ItemGrantOut = {
+      name: string;
+      type: "weapon" | "armor" | "accessory" | "potion" | "scroll" | "tool" | "misc";
+      description: string;
+      slot?: "weapon" | "armor" | "accessory";
+      flavor?: string;
+      consumable?: boolean;
+      quantity?: number;
+      character?: string;
+    };
+    let itemGrants: ItemGrantOut[] | undefined;
+    const VALID_ITEM_TYPES = new Set(["weapon", "armor", "accessory", "potion", "scroll", "tool", "misc"]);
+    const VALID_SLOTS = new Set(["weapon", "armor", "accessory"]);
 
     if (structured) {
       const parsed = parseJsonLoose(rawContent);
@@ -247,6 +260,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           if (npcSpawns.length === 0) npcSpawns = undefined;
         }
+        if (Array.isArray(parsed.item_grants)) {
+          itemGrants = parsed.item_grants
+            .filter((g: unknown): g is Record<string, unknown> =>
+              typeof g === "object" && g !== null
+              && typeof (g as { name?: unknown }).name === "string"
+              && typeof (g as { type?: unknown }).type === "string"
+              && typeof (g as { description?: unknown }).description === "string"
+              && VALID_ITEM_TYPES.has(String((g as { type: unknown }).type))
+            )
+            .slice(0, 4)
+            .map((g): ItemGrantOut => {
+              const out: ItemGrantOut = {
+                name: String(g.name).slice(0, 60),
+                type: String(g.type) as ItemGrantOut["type"],
+                description: String(g.description).slice(0, 300),
+              };
+              if (typeof g.slot === "string" && VALID_SLOTS.has(g.slot)) {
+                out.slot = g.slot as ItemGrantOut["slot"];
+              }
+              if (typeof g.flavor === "string") out.flavor = g.flavor.slice(0, 80);
+              if (g.consumable === true) out.consumable = true;
+              if (typeof g.quantity === "number" && g.quantity > 0 && g.quantity < 100) {
+                out.quantity = Math.floor(g.quantity);
+              }
+              if (typeof g.character === "string") out.character = g.character.slice(0, 40);
+              return out;
+            });
+          if (itemGrants.length === 0) itemGrants = undefined;
+        }
       } catch {
         // If parsing fails, fall back to using rawContent as narration text.
       }
@@ -264,6 +306,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (suggestedActions && suggestedActions.length > 0) docData.suggestedActions = suggestedActions;
       if (sceneSuggestion) docData.sceneSuggestion = sceneSuggestion;
       if (npcSpawns && npcSpawns.length > 0) docData.npcSpawns = npcSpawns;
+      if (itemGrants && itemGrants.length > 0) docData.itemGrants = itemGrants;
       if (npcId) docData.npcId = npcId;
       if (interactionNpcId) docData.interactionNpcId = interactionNpcId;
       await db
