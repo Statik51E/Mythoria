@@ -103,33 +103,73 @@ function asciiOnly(s: string): string {
     .trim();
 }
 
+// Same closing brushwork the player-character template uses, so portraits
+// generated for NPCs share the realistic oil-painting aesthetic.
+const PLAYER_STYLE_SUFFIX =
+  "highly detailed, realistic oil painting style, dramatic cinematic lighting from the side, dark moody background, painterly digital art, artstation quality, intricate textures, depth of field";
+
+// Deterministic archetype (race + class) derived from the NPC seed + role,
+// used when the MJ did not supply concrete appearance details. Keeps the
+// same look as the player templates instead of a free-form description.
+const ROLE_ARCHETYPES: Record<NonNullable<Npc["role"]>, ClassId[]> = {
+  hostile: ["warrior", "barbarian", "rogue"],
+  ally: ["paladin", "ranger", "cleric"],
+  neutral: ["bard", "mage", "warrior"],
+};
+const ALL_RACES: RaceId[] = ["human", "elf", "dwarf", "halfling", "halforc", "tiefling"];
+
+function pick<T>(arr: T[], seed: number, salt: number): T {
+  const i = Math.abs(Math.floor(seed * 9301 + salt * 49297)) % arr.length;
+  return arr[i];
+}
+
+function deriveArchetype(npc: Partial<Npc>): { race: RaceId; classId: ClassId; gender: "male" | "female" } {
+  const seed = npc.portraitSeed ?? 0;
+  const role = (npc.role ?? "neutral") as NonNullable<Npc["role"]>;
+  const classes = ROLE_ARCHETYPES[role] ?? ROLE_ARCHETYPES.neutral;
+  // Bias gender from name: simple heuristic, falls back to seed parity.
+  const name = (npc.name ?? "").toLowerCase();
+  const femaleHint = /(a|e|ie|ette|elle|ine|ille)$/.test(name);
+  const gender: "male" | "female" = femaleHint ? "female" : seed % 2 === 0 ? "male" : "female";
+  return {
+    race: pick(ALL_RACES, seed, 13),
+    classId: pick(classes, seed, 29),
+    gender,
+  };
+}
+
 export function buildNpcPortraitPrompt(npc: Partial<Npc>): string | null {
+  // If the MJ supplied an explicit English appearance prompt, use it but keep
+  // the player-character suffix so the style matches.
+  if (npc.appearancePrompt) {
+    return [
+      "fantasy character portrait, headshot",
+      asciiOnly(npc.appearancePrompt).slice(0, 320),
+      PLAYER_STYLE_SUFFIX,
+    ].join(", ");
+  }
+
   const hasManualAppearance =
     npc.race ||
     npc.classId ||
     (npc.appearance && Object.keys(npc.appearance).length > 0);
 
-  if (!hasManualAppearance) {
-    const visualText = npc.appearancePrompt ?? npc.description;
-    if (!visualText) return null;
-    const roleHint =
-      npc.role === "hostile"
-        ? "menacing villain, intimidating"
-        : npc.role === "ally"
-        ? "noble companion, trustworthy"
-        : "mysterious figure";
-    return [
-      "fantasy character portrait, headshot, head and shoulders",
-      roleHint,
-      asciiOnly(visualText).slice(0, 300),
-      "oil painting style, cinematic side lighting, dark moody background, artstation",
-    ].join(", ");
+  if (hasManualAppearance) {
+    return buildPortraitPrompt({
+      race: npc.race,
+      classId: npc.classId,
+      appearance: npc.appearance,
+      name: npc.name,
+    });
   }
 
+  // Legacy NPCs (no appearancePrompt, no manual fields): derive a stable
+  // archetype from seed + role and reuse the player template verbatim.
+  const arch = deriveArchetype(npc);
   return buildPortraitPrompt({
-    race: npc.race,
-    classId: npc.classId,
-    appearance: npc.appearance,
+    race: arch.race,
+    classId: arch.classId,
+    appearance: { gender: arch.gender },
     name: npc.name,
   });
 }

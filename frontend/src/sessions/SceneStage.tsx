@@ -3,6 +3,7 @@ import type { Character, CurrentScene, Npc, NpcRole, TokenPosition } from "../li
 import { buildNpcPortraitUrls, buildPortraitUrl } from "../lib/portrait";
 import { buildMapUrlChain } from "../lib/scenePresets";
 import CharacterPortrait from "./CharacterPortrait";
+import ProceduralBattlemap from "./ProceduralBattlemap";
 
 interface Props {
   campaignName: string;
@@ -198,15 +199,16 @@ export default function SceneStage({
         <ParchmentFallback campaignName={campaignName} characters={characters} currentUid={currentUid} />
       ) : (
         <div ref={stageRef} className="absolute inset-0">
-          {/* Always-visible backdrop so the stage isn't black while loading */}
-          <SceneBackdrop label={scene?.label ?? ""} loading={!mapLoaded && !mapFailed} />
+          {/* Always-rendered procedural battlemap — instant, deterministic, no network */}
+          <ProceduralBattlemap label={scene?.label ?? ""} prompt={scene?.prompt ?? ""} seed={scene?.seed ?? 0} />
+          {/* AI-generated map fades in on top if/when it actually loads */}
           {showMap && (
             <img
               key={mapUrl}
               src={mapUrl}
               alt={scene?.label ?? "scène"}
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: mapLoaded ? 1 : 0, transition: "opacity 400ms ease-out" }}
+              style={{ opacity: mapLoaded ? 1 : 0, transition: "opacity 600ms ease-out" }}
               draggable={false}
               onLoad={() => setMapLoaded(true)}
               onError={() => {
@@ -309,53 +311,6 @@ export default function SceneStage({
       </div>
 
     </div>
-  );
-}
-
-function SceneBackdrop({ label, loading = false }: { label: string; loading?: boolean }) {
-  return (
-    <>
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `
-            radial-gradient(1400px 800px at 50% 55%, rgba(96,76,46,.6), transparent 70%),
-            radial-gradient(900px 600px at 25% 30%, rgba(201,162,74,.10), transparent 65%),
-            radial-gradient(900px 600px at 75% 75%, rgba(122,107,200,.08), transparent 65%),
-            linear-gradient(180deg, #1c1612, #0c0906)
-          `,
-        }}
-      />
-      <div
-        className="absolute inset-0 opacity-[0.22]"
-        style={{
-          backgroundImage: `
-            linear-gradient(60deg, rgba(217,185,104,.5) 1px, transparent 1px),
-            linear-gradient(-60deg, rgba(217,185,104,.5) 1px, transparent 1px),
-            linear-gradient(0deg, rgba(217,185,104,.5) 1px, transparent 1px)
-          `,
-          backgroundSize: "70px 121px",
-          maskImage: "radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%)",
-          WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%)",
-        }}
-      />
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="text-center">
-          {loading ? (
-            <>
-              <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-gold-500/30 border-t-gold-400 animate-spin" />
-              <p className="font-mono text-[10px] tracking-eyebrow uppercase text-gold-500/60">
-                Le maître dresse le décor…
-              </p>
-            </>
-          ) : (
-            <p className="font-serif italic text-parchment-2/70 text-[14px] max-w-md px-6">
-              « {label || "Décor"} » — la carte ne s'est pas révélée.
-            </p>
-          )}
-        </div>
-      </div>
-    </>
   );
 }
 
