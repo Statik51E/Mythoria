@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
-import { CATEGORY_LABELS, SCENE_PRESETS, ScenePreset, buildMapUrl } from "../lib/scenePresets";
+import { useEffect, useMemo, useState } from "react";
+import { CATEGORY_LABELS, SCENE_PRESETS, ScenePreset, buildMapUrlChain } from "../lib/scenePresets";
 import type { CurrentScene } from "../lib/types";
 import { newSeed } from "../lib/portrait";
+import ProceduralBattlemap from "./ProceduralBattlemap";
 
 interface Props {
   current?: CurrentScene;
@@ -30,7 +31,30 @@ export default function SceneSelector({ current, onPick, onClose }: Props) {
     tab === "library" ? selectedPreset?.prompt : customPrompt.trim();
   const previewLabel =
     tab === "library" ? selectedPreset?.label ?? "Aucune scène" : customLabel.trim() || "Scène libre";
-  const previewUrl = previewPrompt ? buildMapUrl(previewPrompt, previewSeed, 768) : null;
+  const previewUrls = useMemo(
+    () => (previewPrompt ? buildMapUrlChain(previewPrompt, previewSeed) : []),
+    [previewPrompt, previewSeed]
+  );
+  const [aiIdx, setAiIdx] = useState(0);
+  const [aiLoaded, setAiLoaded] = useState(false);
+  const [aiFailed, setAiFailed] = useState(false);
+  useEffect(() => {
+    setAiIdx(0);
+    setAiLoaded(false);
+    setAiFailed(false);
+  }, [previewUrls.join("|")]);
+  useEffect(() => {
+    if (aiLoaded || aiFailed) return;
+    const t = setTimeout(() => {
+      setAiIdx((i) => {
+        if (i + 1 < previewUrls.length) return i + 1;
+        setAiFailed(true);
+        return i;
+      });
+    }, 12000);
+    return () => clearTimeout(t);
+  }, [aiIdx, aiLoaded, aiFailed, previewUrls.length]);
+  const aiUrl = previewUrls[aiIdx] ?? null;
 
   async function applyLibrary() {
     if (!selectedPreset) return;
@@ -168,21 +192,32 @@ export default function SceneSelector({ current, onPick, onClose }: Props) {
                 <div className="eyebrow mb-0.5">Aperçu</div>
                 <div className="font-serif text-[18px] text-parchment leading-tight">{previewLabel}</div>
               </div>
-              {previewUrl && (
+              {previewPrompt && (
                 <button onClick={() => setPreviewSeed(newSeed())} className="btn-ghost text-[11px]">
                   ↻ Re-générer
                 </button>
               )}
             </div>
 
-            {previewUrl ? (
+            {previewPrompt ? (
               <div className="rounded-md overflow-hidden border border-hairline-strong bg-ink-900 aspect-square shadow-panel relative">
-                <img
-                  src={previewUrl}
-                  alt={previewLabel}
-                  className="w-full h-full object-cover"
-                  loading="eager"
-                />
+                <ProceduralBattlemap label={previewLabel} prompt={previewPrompt} seed={previewSeed} />
+                {aiUrl && !aiFailed && (
+                  <img
+                    key={aiUrl}
+                    src={aiUrl}
+                    alt={previewLabel}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ opacity: aiLoaded ? 1 : 0, transition: "opacity 600ms ease-out" }}
+                    loading="eager"
+                    onLoad={() => setAiLoaded(true)}
+                    onError={() => {
+                      setAiLoaded(false);
+                      if (aiIdx + 1 < previewUrls.length) setAiIdx(aiIdx + 1);
+                      else setAiFailed(true);
+                    }}
+                  />
+                )}
               </div>
             ) : (
               <div className="rounded-md border border-dashed border-hairline aspect-square flex items-center justify-center">
@@ -193,7 +228,7 @@ export default function SceneSelector({ current, onPick, onClose }: Props) {
             )}
 
             <p className="font-mono text-[10px] tracking-label uppercase text-ink-400 text-center mt-3">
-              Génération via Pollinations.ai · ~5-15s · Re-générer change le rendu sans changer la scène
+              Carte tactique procédurale instantanée · l'image IA s'ajoute par-dessus si elle charge
             </p>
           </div>
         </div>
