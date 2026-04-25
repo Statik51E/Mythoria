@@ -7,16 +7,22 @@ export interface ScenePreset {
 }
 
 const STYLE_PREFIX =
-  "top-down tabletop RPG battlemap, orthographic bird's eye view, no perspective";
+  "top-down tabletop RPG battlemap, orthographic bird's eye view from directly above, flat 2D map, no perspective, no isometric";
 
 const STYLE_SUFFIX =
-  "hand-painted digital fantasy cartography in the style of Forgotten Adventures, richly textured surfaces, soft natural lighting, dnd battlemap, high detail, no characters, no people, no creatures, no text, no grid lines";
+  "hand-painted digital fantasy cartography in the style of Forgotten Adventures and Czepeku, richly textured surfaces, soft natural lighting from above, dnd battlemap for virtual tabletop, photorealistic materials (wood, stone, fabric), high detail, no characters, no people, no creatures, no text, no labels, no grid lines, no compass";
 
 export function buildMapPrompt(scenePrompt: string): string {
   return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
-function mapUrl(prompt: string, seed: number, w: number, h: number, model: "flux" | "turbo"): string {
+// Same Pollinations model lineup as portraits, ordered by quality for our use
+// case. gpt-image-2 understands "top-down battlemap" semantics best; klein
+// (FLUX.2) renders gorgeous textures; flux (Schnell) is the speed fallback.
+type MapModel = "gpt-image-2" | "klein" | "flux";
+const MAP_MODELS: MapModel[] = ["gpt-image-2", "klein", "flux"];
+
+function mapUrl(prompt: string, seed: number, w: number, h: number, model: MapModel): string {
   const enc = encodeURIComponent(prompt);
   const params = new URLSearchParams({
     seed: String(seed),
@@ -29,18 +35,15 @@ function mapUrl(prompt: string, seed: number, w: number, h: number, model: "flux
 }
 
 export function buildMapUrl(scenePrompt: string, seed: number, width = 1024, height = 576): string {
-  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "turbo");
+  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "gpt-image-2");
 }
 
-// 1024×576 is the most stable Pollinations size in our testing. Turbo first
-// (almost never hangs), then flux for quality if turbo failed.
+// 1024×576 is the most stable Pollinations size in our testing. Cycle through
+// the three free models at the same seed so the rendered scene stays the same
+// even if the better model is rate-limited and we fall through.
 export function buildMapUrlChain(scenePrompt: string, seed: number): string[] {
   const prompt = buildMapPrompt(scenePrompt);
-  return [
-    mapUrl(prompt, seed, 1024, 576, "turbo"),
-    mapUrl(prompt, seed, 1024, 576, "flux"),
-    mapUrl(prompt, seed + 1, 768, 448, "turbo"),
-  ];
+  return MAP_MODELS.map((m) => mapUrl(prompt, seed, 1024, 576, m));
 }
 
 export const SCENE_PRESETS: ScenePreset[] = [

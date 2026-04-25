@@ -30,6 +30,8 @@ export default function CharacterPortrait({
   }, [sourcesKey]);
 
   // Pollinations sometimes hangs forever without firing onError. Force advance.
+  // 20s tolerates first-generation latency on gpt-image-2 (subsequent loads of
+  // the same URL hit Cloudflare cache instantly).
   useEffect(() => {
     if (status !== "loading") return;
     const t = setTimeout(() => {
@@ -38,7 +40,7 @@ export default function CharacterPortrait({
       } else {
         setStatus("error");
       }
-    }, 10000);
+    }, 20000);
     return () => clearTimeout(t);
   }, [status, idx, sources.length]);
 

@@ -51,7 +51,7 @@ export default function SceneSelector({ current, onPick, onClose }: Props) {
         setAiFailed(true);
         return i;
       });
-    }, 12000);
+    }, 22000);
     return () => clearTimeout(t);
   }, [aiIdx, aiLoaded, aiFailed, previewUrls.length]);
   const aiUrl = previewUrls[aiIdx] ?? null;
