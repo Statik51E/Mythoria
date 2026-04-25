@@ -29,14 +29,17 @@ function mapUrl(prompt: string, seed: number, w: number, h: number, model: "flux
   return `https://image.pollinations.ai/prompt/${enc}?${params.toString()}`;
 }
 
-export function buildMapUrl(scenePrompt: string, seed: number, width = 1280, height = 720): string {
+export function buildMapUrl(scenePrompt: string, seed: number, width = 1280, height = 704): string {
   return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "flux");
 }
 
+// Sizes are multiples of 64 (Flux constraint). Turbo first because it almost
+// never hangs; Flux second for higher quality if turbo failed.
 export function buildMapUrlChain(scenePrompt: string, seed: number): string[] {
   const prompt = buildMapPrompt(scenePrompt);
   return [
-    mapUrl(prompt, seed, 1280, 720, "flux"),
+    mapUrl(prompt, seed, 1280, 704, "turbo"),
+    mapUrl(prompt, seed, 1280, 704, "flux"),
     mapUrl(prompt, seed + 1, 1024, 576, "turbo"),
     mapUrl(prompt, seed + 2, 1024, 768, "turbo"),
   ];

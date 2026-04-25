@@ -65,10 +65,25 @@ export default function SceneStage({
   );
   const [mapIdx, setMapIdx] = useState(0);
   const [mapFailed, setMapFailed] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const mapKey = mapUrls.join("|");
   useEffect(() => {
     setMapIdx(0);
     setMapFailed(false);
-  }, [mapUrls.join("|")]);
+    setMapLoaded(false);
+  }, [mapKey]);
+  // Pollinations sometimes hangs without firing onError. Force-advance after 12s.
+  useEffect(() => {
+    if (mapLoaded || mapFailed) return;
+    const t = setTimeout(() => {
+      setMapIdx((i) => {
+        if (i + 1 < mapUrls.length) return i + 1;
+        setMapFailed(true);
+        return i;
+      });
+    }, 12000);
+    return () => clearTimeout(t);
+  }, [mapIdx, mapLoaded, mapFailed, mapUrls.length]);
   const mapUrl = mapUrls[mapIdx] ?? null;
 
   const npcList = useMemo(() => Object.values(npcs ?? {}), [npcs]);
@@ -183,20 +198,23 @@ export default function SceneStage({
         <ParchmentFallback campaignName={campaignName} characters={characters} currentUid={currentUid} />
       ) : (
         <div ref={stageRef} className="absolute inset-0">
-          {showMap ? (
+          {/* Always-visible backdrop so the stage isn't black while loading */}
+          <SceneBackdrop label={scene?.label ?? ""} loading={!mapLoaded && !mapFailed} />
+          {showMap && (
             <img
               key={mapUrl}
               src={mapUrl}
               alt={scene?.label ?? "scène"}
               className="absolute inset-0 w-full h-full object-cover"
+              style={{ opacity: mapLoaded ? 1 : 0, transition: "opacity 400ms ease-out" }}
               draggable={false}
+              onLoad={() => setMapLoaded(true)}
               onError={() => {
+                setMapLoaded(false);
                 if (mapIdx + 1 < mapUrls.length) setMapIdx(mapIdx + 1);
                 else setMapFailed(true);
               }}
             />
-          ) : (
-            <SceneBackdrop label={scene?.label ?? ""} />
           )}
           {/* Battlemap 1-inch grid overlay */}
           <div
@@ -294,7 +312,7 @@ export default function SceneStage({
   );
 }
 
-function SceneBackdrop({ label }: { label: string; loading?: boolean }) {
+function SceneBackdrop({ label, loading = false }: { label: string; loading?: boolean }) {
   return (
     <>
       <div
@@ -322,9 +340,20 @@ function SceneBackdrop({ label }: { label: string; loading?: boolean }) {
         }}
       />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <p className="font-serif italic text-parchment-2/70 text-[14px] max-w-md text-center px-6">
-          « {label || "Décor"} » — la carte ne s'est pas révélée.
-        </p>
+        <div className="text-center">
+          {loading ? (
+            <>
+              <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-gold-500/30 border-t-gold-400 animate-spin" />
+              <p className="font-mono text-[10px] tracking-eyebrow uppercase text-gold-500/60">
+                Le maître dresse le décor…
+              </p>
+            </>
+          ) : (
+            <p className="font-serif italic text-parchment-2/70 text-[14px] max-w-md px-6">
+              « {label || "Décor"} » — la carte ne s'est pas révélée.
+            </p>
+          )}
+        </div>
       </div>
     </>
   );
