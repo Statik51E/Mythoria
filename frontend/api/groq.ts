@@ -5,6 +5,30 @@ const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
 type GroqMessage = { role: "system" | "user" | "assistant"; content: string };
 
+// Llama sometimes ignores response_format and wraps JSON in ```json fences,
+// or prepends a sentence before the object. This tolerates both.
+function parseJsonLoose(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const attempts: string[] = [trimmed];
+  const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  if (fence) attempts.push(fence[1].trim());
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) attempts.push(trimmed.slice(start, end + 1));
+  for (const candidate of attempts) {
+    try {
+      const result = JSON.parse(candidate);
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        return result as Record<string, unknown>;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 interface CallGroqInput {
   campaignId: string;
   sessionId: string;
@@ -12,7 +36,10 @@ interface CallGroqInput {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  persistAs?: "gm" | "system";
+  persistAs?: "gm" | "system" | "npc";
+  structured?: boolean;
+  npcId?: string;
+  interactionNpcId?: string;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -36,7 +63,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     mark("parse-body");
     const body = (req.body ?? {}) as Partial<CallGroqInput>;
-    const { campaignId, sessionId, messages, model, temperature, maxTokens, persistAs } = body;
+    const {
+      campaignId, sessionId, messages, model, temperature, maxTokens,
+      persistAs, structured, npcId, interactionNpcId,
+    } = body;
 
     if (!campaignId || !sessionId) {
       res.status(400).json({ error: "campaignId and sessionId required.", trace });
@@ -120,18 +150,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     mark("fetch-groq");
+    const groqBody: Record<string, unknown> = {
+      model: model ?? DEFAULT_MODEL,
+      messages,
+      temperature: temperature ?? 0.8,
+      max_tokens: maxTokens ?? 1024,
+    };
+    if (structured) {
+      groqBody.response_format = { type: "json_object" };
+    }
     const groqRes = await fetch(GROQ_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: model ?? DEFAULT_MODEL,
-        messages,
-        temperature: temperature ?? 0.8,
-        max_tokens: maxTokens ?? 1024,
-      }),
+      body: JSON.stringify(groqBody),
     });
     mark(`groq-status=${groqRes.status}`);
 
@@ -150,24 +184,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       choices: { message: { content: string } }[];
       usage?: { total_tokens: number };
     };
-    const content = json.choices?.[0]?.message?.content ?? "";
+    const rawContent = json.choices?.[0]?.message?.content ?? "";
     const tokensUsed = json.usage?.total_tokens ?? null;
+
+    let narration = rawContent;
+    let suggestedActions: { label: string; prompt: string }[] | undefined;
+    let sceneSuggestion: { id?: string; label: string; prompt: string } | undefined;
+    let npcSpawns:
+      | { id?: string; name: string; role: "ally" | "neutral" | "hostile"; description: string }[]
+      | undefined;
+
+    if (structured) {
+      const parsed = parseJsonLoose(rawContent);
+      if (parsed && typeof parsed === "object") try {
+        if (typeof parsed.narration === "string") narration = parsed.narration;
+        else if (typeof parsed.text === "string") narration = parsed.text;
+
+        if (Array.isArray(parsed.suggested_actions)) {
+          suggestedActions = parsed.suggested_actions
+            .filter((a: unknown): a is { label: string; prompt: string } =>
+              typeof a === "object" && a !== null
+              && typeof (a as { label?: unknown }).label === "string"
+              && typeof (a as { prompt?: unknown }).prompt === "string"
+            )
+            .slice(0, 5)
+            .map((a) => ({ label: String(a.label).slice(0, 40), prompt: String(a.prompt).slice(0, 200) }));
+        }
+        if (parsed.scene_change && typeof parsed.scene_change === "object") {
+          const sc = parsed.scene_change as Record<string, unknown>;
+          if (typeof sc.label === "string" && typeof sc.prompt === "string") {
+            sceneSuggestion = {
+              id: typeof sc.id === "string" ? sc.id : undefined,
+              label: sc.label.slice(0, 60),
+              prompt: sc.prompt.slice(0, 600),
+            };
+          }
+        }
+        if (Array.isArray(parsed.npc_spawns)) {
+          npcSpawns = parsed.npc_spawns
+            .filter((n: unknown): n is { name: string; description: string; role?: string; id?: string } =>
+              typeof n === "object" && n !== null
+              && typeof (n as { name?: unknown }).name === "string"
+              && typeof (n as { description?: unknown }).description === "string"
+            )
+            .slice(0, 3)
+            .map((n) => {
+              const role = n.role === "ally" || n.role === "hostile" ? n.role : "neutral";
+              return {
+                id: typeof n.id === "string" ? n.id.slice(0, 40) : undefined,
+                name: String(n.name).slice(0, 40),
+                role,
+                description: String(n.description).slice(0, 400),
+              };
+            });
+          if (npcSpawns.length === 0) npcSpawns = undefined;
+        }
+      } catch {
+        // If parsing fails, fall back to using rawContent as narration text.
+      }
+    }
 
     if (persistAs) {
       mark("persist");
+      const docData: Record<string, unknown> = {
+        type: persistAs,
+        authorUid: "system",
+        content: narration,
+        createdAt: FieldValue.serverTimestamp(),
+        tokensUsed,
+      };
+      if (suggestedActions && suggestedActions.length > 0) docData.suggestedActions = suggestedActions;
+      if (sceneSuggestion) docData.sceneSuggestion = sceneSuggestion;
+      if (npcSpawns && npcSpawns.length > 0) docData.npcSpawns = npcSpawns;
+      if (npcId) docData.npcId = npcId;
+      if (interactionNpcId) docData.interactionNpcId = interactionNpcId;
       await db
         .collection(`campaigns/${campaignId}/sessions/${sessionId}/messages`)
-        .add({
-          type: persistAs,
-          authorUid: "system",
-          content,
-          createdAt: FieldValue.serverTimestamp(),
-          tokensUsed,
-        });
+        .add(docData);
     }
 
     mark("done");
-    res.status(200).json({ content, tokensUsed });
+    res.status(200).json({ content: narration, tokensUsed, suggestedActions, sceneSuggestion });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
