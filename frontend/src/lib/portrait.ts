@@ -13,13 +13,14 @@ import {
 
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
 
-// Pollinations 2026 free model lineup, ordered by fantasy-art quality based on
-// our own testing. gpt-image-2 nails composition + style adherence (lighting,
-// gear, race traits) but is slower; klein (FLUX.2) is the best Flux generation
-// and very fast; flux (Schnell) is the workhorse fallback. DiceBear sits below
-// as the can't-fail SVG safety net.
-type PollinationsModel = "gpt-image-2" | "klein" | "flux";
-const PORTRAIT_MODELS: PollinationsModel[] = ["gpt-image-2", "klein", "flux"];
+// Pollinations free tier rotated again (April 2026): /models now only lists
+// `sana`, and gpt-image-2 / klein return 429 instantly from the anon tier.
+// `flux` (Schnell) is still the most reliable workhorse for fantasy portraits;
+// `sana` is the documented fallback. CharacterPortrait renders a stylized
+// initials badge if both fail, which matches the oil-painted aesthetic far
+// better than DiceBear's cartoon avatars (which we removed for this reason).
+type PollinationsModel = "flux" | "sana";
+const PORTRAIT_MODELS: PollinationsModel[] = ["flux", "sana"];
 
 interface PortraitInput {
   race?: RaceId;
@@ -66,7 +67,7 @@ export function portraitUrl(
   prompt: string,
   seed: number,
   _displaySize?: number,
-  model: PollinationsModel = "gpt-image-2"
+  model: PollinationsModel = "flux"
 ): string {
   void _displaySize;
   const enc = encodeURIComponent(prompt);

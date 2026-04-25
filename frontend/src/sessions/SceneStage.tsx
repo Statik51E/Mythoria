@@ -73,10 +73,9 @@ export default function SceneStage({
     setMapFailed(false);
     setMapLoaded(false);
   }, [mapKey]);
-  // Pollinations sometimes hangs without firing onError. Force-advance after 22s.
-  // gpt-image-2 (our new primary model) takes 12-18s on first generation but
-  // is then cached forever — the higher timeout avoids falling through to
-  // weaker models just because the first render is slow.
+  // Pollinations sometimes hangs without firing onError. Force-advance after 12s.
+  // flux (Schnell) usually returns in 3-6s; 12s gives it margin for cold starts
+  // before falling through to sana.
   useEffect(() => {
     if (mapLoaded || mapFailed) return;
     const t = setTimeout(() => {
@@ -85,7 +84,7 @@ export default function SceneStage({
         setMapFailed(true);
         return i;
       });
-    }, 22000);
+    }, 12000);
     return () => clearTimeout(t);
   }, [mapIdx, mapLoaded, mapFailed, mapUrls.length]);
   const mapUrl = mapUrls[mapIdx] ?? null;

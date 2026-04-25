@@ -16,11 +16,12 @@ export function buildMapPrompt(scenePrompt: string): string {
   return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
-// Same Pollinations model lineup as portraits, ordered by quality for our use
-// case. gpt-image-2 understands "top-down battlemap" semantics best; klein
-// (FLUX.2) renders gorgeous textures; flux (Schnell) is the speed fallback.
-type MapModel = "gpt-image-2" | "klein" | "flux";
-const MAP_MODELS: MapModel[] = ["gpt-image-2", "klein", "flux"];
+// Pollinations free tier rotated again (April 2026): /models now only lists
+// `sana`, and gpt-image-2 / klein return 429 instantly from the anon tier.
+// `flux` (Schnell) is still the most reliable workhorse for fantasy art and
+// understands "top-down battlemap" well; `sana` is the documented fallback.
+type MapModel = "flux" | "sana";
+const MAP_MODELS: MapModel[] = ["flux", "sana"];
 
 function mapUrl(prompt: string, seed: number, w: number, h: number, model: MapModel): string {
   const enc = encodeURIComponent(prompt);
@@ -35,12 +36,12 @@ function mapUrl(prompt: string, seed: number, w: number, h: number, model: MapMo
 }
 
 export function buildMapUrl(scenePrompt: string, seed: number, width = 1024, height = 576): string {
-  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "gpt-image-2");
+  return mapUrl(buildMapPrompt(scenePrompt), seed, width, height, "flux");
 }
 
 // 1024×576 is the most stable Pollinations size in our testing. Cycle through
-// the three free models at the same seed so the rendered scene stays the same
-// even if the better model is rate-limited and we fall through.
+// the available free models at the same seed so the rendered scene stays the
+// same even if the better model is rate-limited and we fall through.
 export function buildMapUrlChain(scenePrompt: string, seed: number): string[] {
   const prompt = buildMapPrompt(scenePrompt);
   return MAP_MODELS.map((m) => mapUrl(prompt, seed, 1024, 576, m));

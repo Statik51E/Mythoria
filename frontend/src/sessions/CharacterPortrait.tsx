@@ -40,7 +40,7 @@ export default function CharacterPortrait({
       } else {
         setStatus("error");
       }
-    }, 20000);
+    }, 12000);
     return () => clearTimeout(t);
   }, [status, idx, sources.length]);
 

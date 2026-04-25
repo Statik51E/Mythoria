@@ -112,11 +112,14 @@ export default function MusicPlayer({ scene, npcs }: Props) {
 
   return (
     <div className="fixed bottom-4 right-4 z-30 select-none">
+      {/* No crossOrigin attribute on purpose — Incompetech (and most static
+          MP3 hosts) don't return CORS headers, and setting crossOrigin would
+          force a preflight that fails the load. <audio> can play cross-origin
+          URLs without it for plain playback. */}
       <audio
         ref={audioRef}
         loop
         preload="none"
-        crossOrigin="anonymous"
         onEnded={skip}
       />
       <div className="bg-ink-900/90 border border-parchment-2/15 rounded-lg shadow-2xl backdrop-blur-md text-parchment-1">
