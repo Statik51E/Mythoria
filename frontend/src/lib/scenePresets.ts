@@ -16,7 +16,7 @@ export function buildMapPrompt(scenePrompt: string): string {
   return `${STYLE_PREFIX}, ${scenePrompt}, ${STYLE_SUFFIX}`;
 }
 
-export function buildMapUrl(scenePrompt: string, seed: number, width = 1792, height = 1024): string {
+export function buildMapUrl(scenePrompt: string, seed: number, width = 1024, height = 576): string {
   const enc = encodeURIComponent(buildMapPrompt(scenePrompt));
   const params = new URLSearchParams({
     seed: String(seed),
