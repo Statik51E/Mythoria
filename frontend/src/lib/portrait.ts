@@ -80,26 +80,19 @@ export function portraitUrl(
   return `${POLLINATIONS_BASE}/${enc}?${params.toString()}`;
 }
 
-// DiceBear "adventurer" never fails — small SVG/PNG, instant CDN response.
-// Used as ultimate fallback so NPCs always have *some* visual.
-function diceBearUrl(seed: string | number, size: number): string {
-  return `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(
-    String(seed)
-  )}&size=${size}&backgroundColor=2a2219`;
-}
-
 export function buildPortraitFallbackUrls(
   prompt: string,
   seed: number,
   size = 512,
-  diceSeed?: string | number
+  _diceSeed?: string | number
 ): string[] {
+  void _diceSeed;
   // Same seed across all models so the character "stays the same person" even
   // if we fall through; only the rendering style differs between attempts.
-  return [
-    ...PORTRAIT_MODELS.map((m) => portraitUrl(prompt, seed, size, m)),
-    diceBearUrl(diceSeed ?? seed, Math.min(size, 256)),
-  ];
+  // No DiceBear at the end on purpose — its cartoon avatars clash hard with
+  // the oil-painted aesthetic. CharacterPortrait already renders a stylized
+  // initials badge when all sources fail, which matches the look.
+  return PORTRAIT_MODELS.map((m) => portraitUrl(prompt, seed, size, m));
 }
 
 export function buildPortraitUrl(input: PortraitInput, seed: number, size = 512): string {
@@ -199,12 +192,8 @@ export function buildNpcPortraitPrompt(npc: Partial<Npc>): string | null {
 export function buildNpcPortraitUrls(npc: Partial<Npc>, size = 192): string[] {
   if (!npc.portraitSeed) return [];
   const prompt = buildNpcPortraitPrompt(npc);
-  const diceSeed = `${npc.id ?? npc.name ?? "npc"}_${npc.portraitSeed}`;
-  if (!prompt) {
-    // No usable prompt at all — go straight to the procedural avatar.
-    return [diceBearUrl(diceSeed, Math.min(size, 256))];
-  }
-  return buildPortraitFallbackUrls(prompt, npc.portraitSeed, size, diceSeed);
+  if (!prompt) return [];
+  return buildPortraitFallbackUrls(prompt, npc.portraitSeed, size);
 }
 
 export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 192): string | null {
