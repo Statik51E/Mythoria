@@ -1,4 +1,4 @@
-import type { Appearance, ClassId, RaceId } from "./types";
+import type { Appearance, ClassId, Npc, RaceId } from "./types";
 import {
   BEARDS,
   EYE_COLORS,
@@ -69,11 +69,30 @@ export function newSeed(): number {
   return Math.floor(Math.random() * 1_000_000);
 }
 
-export function buildNpcPortraitUrl(
-  npc: { race?: RaceId; classId?: ClassId; appearance?: Partial<Appearance>; name?: string; portraitSeed?: number },
-  size = 192
-): string | null {
+export function buildNpcPortraitUrl(npc: Partial<Npc>, size = 192): string | null {
   if (!npc.portraitSeed) return null;
+
+  const hasManualAppearance =
+    npc.race ||
+    npc.classId ||
+    (npc.appearance && Object.keys(npc.appearance).length > 0);
+
+  if (!hasManualAppearance && npc.description) {
+    const roleHint =
+      npc.role === "hostile"
+        ? "menacing villain, intimidating"
+        : npc.role === "ally"
+        ? "noble companion, trustworthy"
+        : "mysterious figure";
+    const prompt = [
+      "fantasy character portrait, headshot",
+      roleHint,
+      npc.description,
+      "highly detailed, realistic oil painting style, dramatic cinematic side lighting, dark moody background, painterly digital art, artstation quality, intricate textures, depth of field",
+    ].join(", ");
+    return portraitUrl(prompt, npc.portraitSeed, size);
+  }
+
   return buildPortraitUrl(
     {
       race: npc.race,
