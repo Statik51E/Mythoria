@@ -80,6 +80,7 @@ export default function SessionView() {
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const appliedSceneSuggestionRef = useRef<string | null>(null);
   const appliedNpcSpawnsRef = useRef<string | null>(null);
+  const appliedNpcDespawnsRef = useRef<string | null>(null);
   const appliedItemGrantsRef = useRef<string | null>(null);
   const bootstrappedRef = useRef(false);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
@@ -182,6 +183,17 @@ export default function SessionView() {
     if (appliedNpcSpawnsRef.current === key) return;
     appliedNpcSpawnsRef.current = key;
     handleApplyNpcSpawns(lastGm.npcSpawns);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
+  // ---------- Auto-apply MJ NPC despawns (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.npcDespawns || lastGm.npcDespawns.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.npcDespawns.join(",")}`;
+    if (appliedNpcDespawnsRef.current === key) return;
+    appliedNpcDespawnsRef.current = key;
+    handleApplyNpcDespawns(lastGm.npcDespawns);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGm, isHost]);
 
@@ -370,6 +382,38 @@ export default function SessionView() {
         sessionId,
         user.uid,
         `${n.name} entre en scène.`,
+        "system"
+      );
+    }
+  }
+
+  async function handleApplyNpcDespawns(names: string[]) {
+    if (!campaignId || !sessionId || !user) return;
+    const existing = session?.npcs ?? {};
+    const existingTokens = session?.npcTokens ?? {};
+    const removedNames: string[] = [];
+    const nextNpcs: Record<string, Npc> = {};
+    const nextTokens: Record<string, { x: number; y: number }> = { ...existingTokens };
+    const targets = new Set(names.map((n) => n.toLowerCase().trim()));
+    for (const [id, npc] of Object.entries(existing)) {
+      const matches = targets.has(npc.name.toLowerCase().trim()) || targets.has(id.toLowerCase());
+      if (matches) {
+        removedNames.push(npc.name);
+        delete nextTokens[id];
+        // Also clear an active dialogue with this NPC if any.
+        if (activeInteractionNpcId === id) setActiveInteractionNpcId(null);
+      } else {
+        nextNpcs[id] = npc;
+      }
+    }
+    if (removedNames.length === 0) return;
+    await updateSession(campaignId, sessionId, { npcs: nextNpcs, npcTokens: nextTokens });
+    for (const name of removedNames) {
+      await postMessage(
+        campaignId,
+        sessionId,
+        user.uid,
+        `${name} quitte la scène.`,
         "system"
       );
     }

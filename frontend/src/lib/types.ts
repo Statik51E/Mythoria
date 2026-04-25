@@ -165,6 +165,9 @@ export interface Message {
   suggestedActions?: SuggestedAction[];
   sceneSuggestion?: SceneSuggestion;
   npcSpawns?: NpcSpawn[];
+  // NPC ids or names that should leave the scene (player walked past, NPC
+  // departed, was killed, etc.). Matching is case-insensitive on name.
+  npcDespawns?: string[];
   itemGrants?: ItemGrant[];
   npcId?: string;
   interactionNpcId?: string;

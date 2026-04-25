@@ -210,6 +210,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       character?: string;
     };
     let itemGrants: ItemGrantOut[] | undefined;
+    let npcDespawns: string[] | undefined;
     const VALID_ITEM_TYPES = new Set(["weapon", "armor", "accessory", "potion", "scroll", "tool", "misc"]);
     const VALID_SLOTS = new Set(["weapon", "armor", "accessory"]);
 
@@ -260,6 +261,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           if (npcSpawns.length === 0) npcSpawns = undefined;
         }
+        if (Array.isArray(parsed.npc_despawns)) {
+          npcDespawns = parsed.npc_despawns
+            .filter((n: unknown): n is string => typeof n === "string" && n.trim().length > 0)
+            .slice(0, 8)
+            .map((n) => n.trim().slice(0, 40));
+          if (npcDespawns.length === 0) npcDespawns = undefined;
+        }
         if (Array.isArray(parsed.item_grants)) {
           itemGrants = parsed.item_grants
             .filter((g: unknown): g is Record<string, unknown> =>
@@ -306,6 +314,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (suggestedActions && suggestedActions.length > 0) docData.suggestedActions = suggestedActions;
       if (sceneSuggestion) docData.sceneSuggestion = sceneSuggestion;
       if (npcSpawns && npcSpawns.length > 0) docData.npcSpawns = npcSpawns;
+      if (npcDespawns && npcDespawns.length > 0) docData.npcDespawns = npcDespawns;
       if (itemGrants && itemGrants.length > 0) docData.itemGrants = itemGrants;
       if (npcId) docData.npcId = npcId;
       if (interactionNpcId) docData.interactionNpcId = interactionNpcId;

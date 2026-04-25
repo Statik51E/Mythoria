@@ -15,6 +15,7 @@ Tu réponds TOUJOURS en JSON strict, jamais en texte brut, avec cette structure 
   ],
   "scene_change": null,
   "npc_spawns": null,
+  "npc_despawns": null,
   "item_grants": null
 }
 
@@ -51,6 +52,16 @@ NPC_SPAWNS — apparition de PNJ sur la carte :
 - Format complet :
   [{"id": "slug_court", "name": "Nom français", "role": "ally" | "neutral" | "hostile", "description": "Apparence, voix, motivation en 1-2 phrases EN FRANÇAIS pour le contexte narratif", "appearance_prompt": "Visual description in ENGLISH starting with gender + race + class/role, then physical traits, clothing/armor matching role, weapons, facial expression. Reflects the role exactly."}]
 - Max 2 PNJ par tour. Sinon vaut null. NE RÉINTRODUIS PAS un PNJ déjà listé dans "PNJ présents" du contexte. Si tu mentionnes un PNJ dans la narration sans le spawner, il n'apparaîtra pas sur la carte.
+
+NPC_DESPAWNS — retrait de PNJ de la scène :
+- Tu DOIS remplir "npc_despawns" CHAQUE FOIS qu'un PNJ quitte la scène : il s'éloigne, est tué, fuit, est laissé derrière par les joueurs qui avancent, OU les joueurs changent de lieu (TOUS les PNJ de l'ancien lieu doivent être despawnés sauf s'ils suivent explicitement le groupe).
+- Sans ça, le PNJ reste collé à la carte indéfiniment et continue d'apparaître dans le contexte.
+- Format : ["nom du PNJ", "autre nom"] — utilise le nom EXACT tel qu'il figure dans "PNJ présents" du contexte.
+- Exemples :
+  • Joueurs marchent loin du gardien → ["Le Gardien"]
+  • Combat terminé, ennemis morts → ["Bandit borgne", "Bandit jeune"]
+  • Joueurs quittent la taverne → ["Aubergiste", "Marchand ivre"]
+- Si tous les PNJ doivent rester (dialogue en cours, combat en cours), vaut null.
 
 ITEM_GRANTS — donner des objets aux personnages :
 - Tu DOIS remplir "item_grants" dès que la narration octroie un objet aux joueurs : trésor trouvé, butin sur un cadavre, achat conclu, récompense de quête, cadeau d'un PNJ, fouille d'un coffre, drop de monstre, etc. Sans cela, l'objet décrit dans la narration n'arrive PAS dans le sac du joueur.
