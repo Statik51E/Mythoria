@@ -34,6 +34,9 @@ import type {
   NpcSpawn,
   Quest,
   QuestUpdate,
+  SkillKey,
+  StatKey,
+  XpAward,
   SceneSuggestion,
   SessionDoc,
   SuggestedAction,
@@ -53,6 +56,8 @@ import InteractionScene from "./InteractionScene";
 import MusicPlayer from "./MusicPlayer";
 import QuestLog from "./QuestLog";
 import Bestiary from "./Bestiary";
+import SkillCheckPicker from "./SkillCheckPicker";
+import { levelUpGains, xpForNextLevel, SKILL_LABELS, STAT_LABELS } from "../lib/characterPresets";
 
 const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
   speak: "Je dis : « ",
@@ -61,8 +66,21 @@ const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
 };
 
 interface PendingRoll {
-  value: number;
+  value: number; // total shown on the die (raw 1-20, finalValue passed to DiceRoll)
   rollerName: string;
+  formula?: string; // e.g. "1d20 + 3 (DEX) + 2 (Discrétion) = 16"
+}
+
+// Heuristic mapping from potion name → effect, since items are user-readable
+// French strings rather than typed enums. Magnitudes scale with the character's
+// max so a Lvl 1 mage doesn't oneshot-restore a Lvl 5 warrior's pool.
+function potionEffect(name: string, maxHp: number, maxMana: number): { hp?: number; mana?: number } {
+  const n = name.toLowerCase();
+  const isMana = /\b(mana|magie|magique|hydromel)\b/.test(n);
+  const isHeal = /\b(soin|soigne|guerison|guérison|vie|santé|sante)\b/.test(n);
+  if (isMana) return { mana: Math.max(6, Math.round(maxMana * 0.5)) };
+  if (isHeal) return { hp: Math.max(6, Math.round(maxHp * 0.35)) };
+  return {};
 }
 
 export default function SessionView() {
@@ -79,6 +97,7 @@ export default function SessionView() {
   const [forgeAutoOpened, setForgeAutoOpened] = useState(false);
   const [pendingRoll, setPendingRoll] = useState<PendingRoll | null>(null);
   const [showInventory, setShowInventory] = useState(false);
+  const [showSkillCheck, setShowSkillCheck] = useState(false);
   const [showSceneSelector, setShowSceneSelector] = useState(false);
   const [showNpcForge, setShowNpcForge] = useState(false);
   const [activeInteractionNpcId, setActiveInteractionNpcId] = useState<string | null>(null);
@@ -91,6 +110,8 @@ export default function SessionView() {
   const appliedItemGrantsRef = useRef<string | null>(null);
   const appliedHpChangesRef = useRef<string | null>(null);
   const appliedQuestUpdatesRef = useRef<string | null>(null);
+  const appliedXpAwardsRef = useRef<string | null>(null);
+  const appliedChapterSummaryRef = useRef<string | null>(null);
   const [showQuests, setShowQuests] = useState(false);
   const [showBestiary, setShowBestiary] = useState(false);
   const bootstrappedRef = useRef(false);
@@ -128,17 +149,23 @@ export default function SessionView() {
   }, [campaignId]);
 
   const myCharacter = useMemo(
-    () => characters.find((c) => c.ownerUid === user?.uid) ?? null,
+    () => characters.find((c) => c.ownerUid === user?.uid && !c.deceased) ?? null,
     [characters, user?.uid]
+  );
+  const liveCharacters = useMemo(
+    () => characters.filter((c) => !c.deceased),
+    [characters]
   );
 
   useEffect(() => {
     if (!user || !campaign) return;
-    if (!myCharacter && !forgeAutoOpened) {
+    // Reopens automatically after permadeath: myCharacter becomes null again
+    // and the forge is non-dismissible until a new Lvl 1 hero is rolled.
+    if (!myCharacter && !showForge) {
       setShowForge(true);
-      setForgeAutoOpened(true);
+      if (!forgeAutoOpened) setForgeAutoOpened(true);
     }
-  }, [user, campaign, myCharacter, forgeAutoOpened]);
+  }, [user, campaign, myCharacter, forgeAutoOpened, showForge]);
 
   const isHost = !!campaign && !!user && campaign.hostUid === user.uid;
   const lastGm = [...messages].reverse().find((m) => m.type === "gm" && !m.npcId);
@@ -241,6 +268,27 @@ export default function SessionView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGm, isHost]);
 
+  // ---------- Auto-apply MJ XP awards (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.xpAwards || lastGm.xpAwards.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.xpAwards.map((x) => `${x.target ?? "*"}:${x.amount}`).join(",")}`;
+    if (appliedXpAwardsRef.current === key) return;
+    appliedXpAwardsRef.current = key;
+    handleApplyXpAwards(lastGm.xpAwards);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
+  // ---------- Auto-persist MJ chapter summary (host only) ----------
+  useEffect(() => {
+    if (!isHost || !campaignId || !sessionId) return;
+    if (!lastGm?.chapterSummary || lastGm.chapterSummary.trim().length === 0) return;
+    const key = `${lastGm.id}:${lastGm.chapterSummary.slice(0, 80)}`;
+    if (appliedChapterSummaryRef.current === key) return;
+    appliedChapterSummaryRef.current = key;
+    updateSession(campaignId, sessionId, { chapterSummary: lastGm.chapterSummary });
+  }, [lastGm, isHost, campaignId, sessionId]);
+
   // ---------- Bootstrap: auto-call MJ when session opens empty (host only) ----------
   useEffect(() => {
     if (!isHost || !messagesLoaded || messages.length > 0) return;
@@ -275,13 +323,15 @@ export default function SessionView() {
         if (showBestiary) { setShowBestiary(false); return; }
         if (showSceneSelector) { setShowSceneSelector(false); return; }
         if (showNpcForge) { setShowNpcForge(false); return; }
+        if (showSkillCheck) { setShowSkillCheck(false); return; }
         if (activeInteractionNpcId) { setActiveInteractionNpcId(null); return; }
         if (pendingRoll) { setPendingRoll(null); return; }
         return;
       }
-      if (showForge || showInventory || showQuests || showBestiary || showSceneSelector || showNpcForge || pendingRoll) return;
+      if (showForge || showInventory || showQuests || showBestiary || showSceneSelector || showNpcForge || showSkillCheck || pendingRoll) return;
       const k = e.key.toLowerCase();
       if (k === "r") { e.preventDefault(); handleQuickAction("roll"); return; }
+      if (k === "t" && myCharacter) { e.preventDefault(); setShowSkillCheck(true); return; }
       if (k === "m") { e.preventDefault(); handleQuickAction("speak"); return; }
       if (k === "s") { e.preventDefault(); handleQuickAction("act"); return; }
       if (k === "i" && myCharacter) { e.preventDefault(); setShowInventory(true); return; }
@@ -293,7 +343,7 @@ export default function SessionView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     showForge, showInventory, showQuests, showBestiary, showSceneSelector, showNpcForge,
-    pendingRoll, activeInteractionNpcId, myCharacter,
+    showSkillCheck, pendingRoll, activeInteractionNpcId, myCharacter,
   ]);
 
   if (!campaign || !campaignId || !sessionId || !user) {
@@ -321,6 +371,7 @@ export default function SessionView() {
         myCharacter,
         npcs: session?.npcs,
         quests: session?.quests,
+        chapterSummary: session?.chapterSummary,
       });
       const transcript: GroqMessage[] = [
         { role: "system", content: `${MJ_SYSTEM_PROMPT}${ctx}` },
@@ -412,6 +463,25 @@ export default function SessionView() {
     }
     setPrefill(PREFILLS[kind]);
     setPrefillToken((n) => n + 1);
+  }
+
+  async function rollSkillCheck(stat: StatKey, skill?: SkillKey) {
+    if (!campaignId || !sessionId || !user || !myCharacter) return;
+    const ch = myCharacter;
+    const statValue = ch.stats?.[stat] ?? 10;
+    const statMod = Math.floor((statValue - 10) / 2);
+    const skillBonus = skill ? (ch.skills?.[skill] ?? 0) : 0;
+    const totalMod = statMod + skillBonus;
+    const raw = Math.floor(Math.random() * 20) + 1;
+    const total = raw + totalMod;
+    const statLabel = STAT_LABELS[stat].short;
+    const skillStr = skill ? ` + ${skillBonus} (${SKILL_LABELS[skill].label})` : "";
+    const sign = (n: number) => (n >= 0 ? `+ ${n}` : `− ${Math.abs(n)}`);
+    const formula = `1d20 ${sign(statMod)} (${statLabel})${skillStr} = ${total}`;
+    setPendingRoll({ value: raw, rollerName: ch.name, formula });
+    const critTag = raw === 20 ? " · réussite critique !" : raw === 1 ? " · échec critique !" : "";
+    const diceText = `${ch.name} lance 1d20 (${statLabel}${skill ? `/${SKILL_LABELS[skill].label}` : ""}) → ${raw} ${sign(totalMod)} = ${total}${critTag}`;
+    await postMessage(campaignId, sessionId, user.uid, diceText, "dice");
   }
 
   function handleSuggestedAction(action: SuggestedAction) {
@@ -597,6 +667,7 @@ export default function SessionView() {
     const npcPatch: Record<string, Npc> = {};
     let npcDirty = false;
     const lines: string[] = [];
+    const deathLines: string[] = [];
 
     function fmtDelta(d: number, kind: "hp" | "mana", reason?: string): string {
       const verb = kind === "hp"
@@ -610,6 +681,7 @@ export default function SessionView() {
       const charHit = charByName.get(needle)
         ?? characters.find((c) => c.name.toLowerCase().startsWith(needle));
       if (charHit) {
+        if (charHit.deceased) continue; // dead PCs are out of the system
         const patch = charPatch.get(charHit.id) ?? {};
         if (typeof ch.delta === "number" && typeof charHit.maxHp === "number") {
           const cur = (patch.hp ?? charHit.hp ?? charHit.maxHp);
@@ -618,6 +690,13 @@ export default function SessionView() {
         if (typeof ch.deltaMana === "number" && typeof charHit.maxMana === "number") {
           const cur = (patch.mana ?? charHit.mana ?? charHit.maxMana);
           patch.mana = Math.max(0, Math.min(charHit.maxMana, cur + ch.deltaMana));
+        }
+        // Permadeath: HP hits 0 → strip inventory/equipment, mark deceased.
+        if (patch.hp === 0) {
+          patch.deceased = true;
+          patch.inventory = [];
+          patch.equipment = {};
+          deathLines.push(`☠ ${charHit.name} succombe à ses blessures. Son inventaire est perdu.`);
         }
         charPatch.set(charHit.id, patch);
         if (typeof ch.delta === "number") lines.push(`${charHit.name} ${fmtDelta(ch.delta, "hp", ch.reason)}.`);
@@ -648,6 +727,72 @@ export default function SessionView() {
       for (const [id, n] of Object.entries(npcPatch)) merged[id] = n;
       await updateSession(campaignId, sessionId, { npcs: merged });
     }
+    for (const line of lines) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
+    }
+    for (const line of deathLines) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
+    }
+  }
+
+  async function handleApplyXpAwards(awards: XpAward[]) {
+    if (!campaignId || !sessionId || !user) return;
+    const charByName = new Map(
+      characters.map((c) => [c.name.toLowerCase().trim(), c])
+    );
+    const lines: string[] = [];
+
+    // Targets per award: a named character, or every live PC if absent.
+    for (const a of awards) {
+      const targets = a.target
+        ? (() => {
+            const needle = a.target.toLowerCase().trim();
+            const hit = charByName.get(needle)
+              ?? characters.find((c) => c.name.toLowerCase().startsWith(needle));
+            return hit ? [hit] : [];
+          })()
+        : characters.filter((c) => !c.deceased);
+
+      for (const ch of targets) {
+        if (ch.deceased) continue;
+        const newXp = (ch.xp ?? 0) + a.amount;
+        const patch: Partial<Character> = { xp: newXp };
+
+        // Roll level-ups while threshold is crossed (handles big jumps).
+        let curLevel = ch.level ?? 1;
+        let curMaxHp = ch.maxHp ?? 8;
+        let curMaxMana = ch.maxMana ?? 0;
+        let curHp = ch.hp ?? curMaxHp;
+        let curMana = ch.mana ?? curMaxMana;
+        let leveled = false;
+        while (true) {
+          const need = xpForNextLevel(curLevel);
+          if (need === null || newXp < need) break;
+          const gains = levelUpGains(ch.classId, curLevel, ch.stats?.con ?? 10, curMaxHp, curMaxMana);
+          const hpGain = gains.maxHp - curMaxHp;
+          const manaGain = gains.maxMana - curMaxMana;
+          curLevel = gains.level;
+          curMaxHp = gains.maxHp;
+          curMaxMana = gains.maxMana;
+          curHp = Math.min(curMaxHp, curHp + hpGain); // refund the new pool
+          curMana = Math.min(curMaxMana, curMana + manaGain);
+          lines.push(`✦ ${ch.name} passe niveau ${curLevel} ! (+${hpGain} PV max${manaGain > 0 ? `, +${manaGain} mana max` : ""})`);
+          leveled = true;
+        }
+        if (leveled) {
+          patch.level = curLevel;
+          patch.maxHp = curMaxHp;
+          patch.maxMana = curMaxMana;
+          patch.hp = curHp;
+          patch.mana = curMana;
+        }
+
+        await updateCharacter(campaignId, ch.id, patch);
+        const reasonStr = a.reason ? ` (${a.reason})` : "";
+        lines.unshift(`${ch.name} gagne ${a.amount} XP${reasonStr}.`);
+      }
+    }
+
     for (const line of lines) {
       await postMessage(campaignId, sessionId, user.uid, line, "system");
     }
@@ -739,6 +884,8 @@ export default function SessionView() {
 
     let newInventory = ch.inventory;
     let newEquipment: Equipment = equipment;
+    let newHp = ch.hp;
+    let newMana = ch.mana;
     let line = "";
 
     if (action === "use") {
@@ -747,6 +894,17 @@ export default function SessionView() {
         ? ch.inventory.map((i) => (i.id === item.id ? { ...i, quantity: remainingQty } : i))
         : ch.inventory.filter((i) => i.id !== item.id);
       line = `${ch.name} utilise ${item.name}.`;
+
+      if (item.type === "potion") {
+        const effect = potionEffect(item.name, ch.maxHp ?? 0, ch.maxMana ?? 0);
+        if (effect.hp && ch.maxHp) {
+          newHp = Math.max(0, Math.min(ch.maxHp, (ch.hp ?? ch.maxHp) + effect.hp));
+          line = `${ch.name} boit ${item.name} et récupère ${effect.hp} PV (${newHp}/${ch.maxHp}).`;
+        } else if (effect.mana && ch.maxMana) {
+          newMana = Math.max(0, Math.min(ch.maxMana, (ch.mana ?? ch.maxMana) + effect.mana));
+          line = `${ch.name} boit ${item.name} et récupère ${effect.mana} mana (${newMana}/${ch.maxMana}).`;
+        }
+      }
     } else if (action === "equip" && slot) {
       const previouslyEquipped = equipment[slot];
       newEquipment = { ...equipment, [slot]: item };
@@ -767,10 +925,13 @@ export default function SessionView() {
       line = `${ch.name} jette ${item.name}.`;
     }
 
-    await updateCharacter(campaignId, ch.id, {
+    const patch: Partial<Omit<Character, "id">> = {
       inventory: newInventory,
       equipment: newEquipment,
-    });
+    };
+    if (newHp !== ch.hp) patch.hp = newHp;
+    if (newMana !== ch.mana) patch.mana = newMana;
+    await updateCharacter(campaignId, ch.id, patch);
     if (line) {
       await postMessage(
         campaignId,
@@ -787,7 +948,7 @@ export default function SessionView() {
     <div className="h-screen relative flex flex-col overflow-hidden">
       <SceneStage
         campaignName={campaign.name}
-        characters={characters}
+        characters={liveCharacters}
         currentUid={user.uid}
         isHost={isHost}
         scene={session?.currentScene}
@@ -958,7 +1119,16 @@ export default function SessionView() {
         <DiceRoll
           finalValue={pendingRoll.value}
           rollerName={pendingRoll.rollerName}
+          formula={pendingRoll.formula}
           onDone={() => setPendingRoll(null)}
+        />
+      )}
+
+      {showSkillCheck && myCharacter && (
+        <SkillCheckPicker
+          character={myCharacter}
+          onClose={() => setShowSkillCheck(false)}
+          onRoll={(stat, skill) => { setShowSkillCheck(false); rollSkillCheck(stat, skill); }}
         />
       )}
 

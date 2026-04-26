@@ -93,6 +93,9 @@ export interface Character {
   maxHp?: number;
   mana?: number;
   maxMana?: number;
+  xp?: number;
+  deceased?: boolean;
+  diedAt?: Timestamp;
 }
 
 export type NpcRole = "ally" | "neutral" | "hostile";
@@ -109,6 +112,7 @@ export interface Npc {
   portraitSeed?: number;
   hp?: number;
   maxHp?: number;
+  level?: number;
 }
 
 export interface TokenPosition {
@@ -146,6 +150,9 @@ export interface SessionDoc {
   npcs?: Record<string, Npc>;
   npcTokens?: Record<string, TokenPosition>;
   quests?: Record<string, Quest>;
+  // Running 4-8 sentence chapter summary maintained by the MJ. Survives
+  // beyond the message window so long campaigns stay coherent.
+  chapterSummary?: string;
 }
 
 export type MessageType = "player" | "gm" | "system" | "dice" | "npc";
@@ -186,6 +193,14 @@ export interface HpChange {
   reason?: string;
 }
 
+export interface XpAward {
+  // Player character name. Matched case-insensitively. Defaults to whole party
+  // when missing.
+  target?: string;
+  amount: number;
+  reason?: string;
+}
+
 export interface ItemGrant {
   name: string;
   type: ItemType;
@@ -214,7 +229,9 @@ export interface Message {
   npcDespawns?: string[];
   itemGrants?: ItemGrant[];
   hpChanges?: HpChange[];
+  xpAwards?: XpAward[];
   questUpdates?: QuestUpdate[];
+  chapterSummary?: string;
   npcId?: string;
   interactionNpcId?: string;
 }

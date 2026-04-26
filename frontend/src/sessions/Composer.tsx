@@ -56,7 +56,7 @@ export default function Composer({ onSend, prefill, prefillToken }: Props) {
       />
       <div className="flex items-center justify-between">
         <span className="font-mono text-[10px] tracking-label uppercase text-ink-400">
-          Entrée · envoyer · R dé · M parler · S agir · I sac · Q quêtes · B bestiaire
+          Entrée · envoyer · R dé · T test · M parler · S agir · I sac · Q quêtes · B bestiaire
         </span>
         <button
           onClick={send}

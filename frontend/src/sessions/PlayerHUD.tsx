@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Character } from "../lib/types";
 import { buildPortraitUrl } from "../lib/portrait";
+import { xpForNextLevel } from "../lib/characterPresets";
 import CharacterPortrait from "./CharacterPortrait";
 
 interface Props {
@@ -73,6 +74,18 @@ export default function PlayerHUD({ displayName, character, onForge, onOpenInven
                 color="arcane"
               />
             )}
+            {(() => {
+              const xp = character.xp ?? 0;
+              const need = xpForNextLevel(character.level);
+              if (need === null) {
+                return (
+                  <div className="font-mono text-[9px] tracking-label uppercase text-gold-400">
+                    XP {xp} · niv. max
+                  </div>
+                );
+              }
+              return <Bar label="XP" value={Math.min(xp, need)} max={need} color="gold" />;
+            })()}
             {onOpenInventory && (
               <button
                 onClick={onOpenInventory}
@@ -108,13 +121,15 @@ function Bar({
   label: string;
   value: number;
   max: number;
-  color: "ember" | "arcane";
+  color: "ember" | "arcane" | "gold";
 }) {
   const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
   const critical = color === "ember" && pct < 25;
   const bg = color === "ember"
     ? critical ? "#c0392b" : "var(--ember)"
-    : "var(--arcane)";
+    : color === "arcane"
+    ? "var(--arcane)"
+    : "var(--gold-400)";
   return (
     <div className="flex items-center gap-2">
       <span className="font-mono text-[9px] tracking-label uppercase text-ink-400 w-10">{label}</span>

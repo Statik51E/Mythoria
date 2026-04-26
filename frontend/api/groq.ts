@@ -215,6 +215,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let hpChanges: HpChangeOut[] | undefined;
     type QuestUpdateOut = { id: string; title?: string; summary?: string; status?: "active" | "completed" | "failed" };
     let questUpdates: QuestUpdateOut[] | undefined;
+    type XpAwardOut = { target?: string; amount: number; reason?: string };
+    let xpAwards: XpAwardOut[] | undefined;
+    let chapterSummary: string | undefined;
     const VALID_QUEST_STATUS = new Set(["active", "completed", "failed"]);
     const VALID_ITEM_TYPES = new Set(["weapon", "armor", "accessory", "potion", "scroll", "tool", "misc"]);
     const VALID_SLOTS = new Set(["weapon", "armor", "accessory"]);
@@ -323,6 +326,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .filter((h) => h.target.length > 0 && (h.delta !== undefined || h.deltaMana !== undefined));
           if (hpChanges.length === 0) hpChanges = undefined;
         }
+        if (Array.isArray(parsed.xp_awards)) {
+          xpAwards = parsed.xp_awards
+            .filter((x: unknown): x is Record<string, unknown> =>
+              typeof x === "object" && x !== null
+              && typeof (x as { amount?: unknown }).amount === "number"
+            )
+            .slice(0, 3)
+            .map((x): XpAwardOut => {
+              const out: XpAwardOut = {
+                amount: Math.max(0, Math.min(99999, Math.trunc(x.amount as number))),
+              };
+              if (typeof x.target === "string" && x.target.trim().length > 0) {
+                out.target = String(x.target).trim().slice(0, 60);
+              }
+              if (typeof x.reason === "string") out.reason = x.reason.slice(0, 80);
+              return out;
+            })
+            .filter((x) => x.amount > 0);
+          if (xpAwards.length === 0) xpAwards = undefined;
+        }
+        if (typeof parsed.chapter_summary === "string" && parsed.chapter_summary.trim().length > 0) {
+          chapterSummary = parsed.chapter_summary.trim().slice(0, 1500);
+        }
         if (Array.isArray(parsed.quest_updates)) {
           questUpdates = parsed.quest_updates
             .filter((q: unknown): q is Record<string, unknown> =>
@@ -365,7 +391,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (npcDespawns && npcDespawns.length > 0) docData.npcDespawns = npcDespawns;
       if (itemGrants && itemGrants.length > 0) docData.itemGrants = itemGrants;
       if (hpChanges && hpChanges.length > 0) docData.hpChanges = hpChanges;
+      if (xpAwards && xpAwards.length > 0) docData.xpAwards = xpAwards;
       if (questUpdates && questUpdates.length > 0) docData.questUpdates = questUpdates;
+      if (chapterSummary) docData.chapterSummary = chapterSummary;
       if (npcId) docData.npcId = npcId;
       if (interactionNpcId) docData.interactionNpcId = interactionNpcId;
       await db

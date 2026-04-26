@@ -14,42 +14,42 @@ export const RACES: RacePreset[] = [
     label: "Humain",
     flavor: "Polyvalent, ambitieux. Aussi à l'aise dans les cours que sur les champs de bataille.",
     prompt: "human",
-    bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
+    bonus: { str: 1, cha: 1 },
   },
   {
     id: "elf",
     label: "Elfe",
     flavor: "Longévité gracieuse, oreilles pointues, pas léger. Né de la forêt et de la lune.",
     prompt: "elven, sharp pointed ears, slender features",
-    bonus: { dex: 2 },
+    bonus: { dex: 2, int: 1 },
   },
   {
     id: "dwarf",
     label: "Nain",
     flavor: "Trapu, têtu, fier de sa barbe et de son enclume. Endurance légendaire.",
     prompt: "dwarven, stocky muscular build, broad shoulders",
-    bonus: { con: 2 },
+    bonus: { con: 2, wis: 1 },
   },
   {
     id: "halfling",
     label: "Halfelin",
     flavor: "Petit, agile, chanceux. On l'oublie facilement, c'est son meilleur atout.",
     prompt: "halfling, small stature, youthful curious face",
-    bonus: { dex: 2 },
+    bonus: { dex: 2, cha: 1 },
   },
   {
     id: "halforc",
     label: "Demi-orque",
     flavor: "Force brute, défenses vivaces, tribu et orgueil. Souvent jugé sur sa peau verte.",
     prompt: "half-orc, prominent tusks, green-tinted skin, intimidating",
-    bonus: { str: 2 },
+    bonus: { str: 2, con: 1 },
   },
   {
     id: "tiefling",
     label: "Tieffelin",
     flavor: "Sang infernal, cornes recourbées, charisme de l'étrange. Toujours dévisagé.",
     prompt: "tiefling, curved horns, glowing eyes, infernal heritage",
-    bonus: { cha: 2 },
+    bonus: { cha: 2, int: 1 },
   },
 ];
 
@@ -161,6 +161,47 @@ export function rollStartingVitals(
   return { hp: maxHp, maxHp, mana: maxMana, maxMana };
 }
 
+// XP needed to advance from level → level+1. Soft D&D 5e curve, compressed.
+export const XP_THRESHOLDS: number[] = [
+  0,      // sentinel for level 1 floor
+  300,    // → 2
+  900,    // → 3
+  2700,   // → 4
+  6500,   // → 5
+  14000,  // → 6
+  23000,  // → 7
+  34000,  // → 8
+  48000,  // → 9
+  64000,  // → 10
+];
+
+export function xpForNextLevel(currentLevel: number): number | null {
+  if (currentLevel >= XP_THRESHOLDS.length) return null;
+  return XP_THRESHOLDS[currentLevel];
+}
+
+// Returns a patch describing the level-up gains. Caller persists it. Bumps
+// max HP by class baseHp/3 + CON mod (min 4) and max mana by baseMana/4.
+export function levelUpGains(
+  classId: ClassId | undefined,
+  currentLevel: number,
+  con: number,
+  currentMaxHp: number,
+  currentMaxMana: number
+): { level: number; maxHp: number; maxMana: number } {
+  const cls = CLASSES.find((c) => c.id === classId);
+  const baseHp = cls?.baseHp ?? 24;
+  const baseMana = cls?.baseMana ?? 0;
+  const conMod = Math.floor((con - 10) / 2);
+  const hpGain = Math.max(4, Math.round(baseHp / 3) + conMod);
+  const manaGain = baseMana > 0 ? Math.max(2, Math.round(baseMana / 4)) : 0;
+  return {
+    level: currentLevel + 1,
+    maxHp: currentMaxHp + hpGain,
+    maxMana: currentMaxMana + manaGain,
+  };
+}
+
 export const STAT_LABELS: Record<StatKey, { short: string; full: string }> = {
   str: { short: "FOR", full: "Force" },
   dex: { short: "DEX", full: "Dextérité" },
@@ -186,8 +227,8 @@ export const POINT_BUY_COST: Record<number, number> = {
 export const POINT_BUY_MIN = 8;
 export const POINT_BUY_MAX = 15;
 
-export const SKILL_POINTS_TOTAL = 10;
-export const SKILL_POINTS_MAX_PER_SKILL = 5;
+export const SKILL_POINTS_TOTAL = 12;
+export const SKILL_POINTS_MAX_PER_SKILL = 4;
 
 export interface AppearanceOption {
   id: string;

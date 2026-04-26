@@ -18,7 +18,9 @@ Tu réponds TOUJOURS en JSON strict, jamais en texte brut, avec cette structure 
   "npc_despawns": null,
   "item_grants": null,
   "hp_changes": null,
-  "quest_updates": null
+  "xp_awards": null,
+  "quest_updates": null,
+  "chapter_summary": null
 }
 
 Règles strictes :
@@ -89,6 +91,13 @@ HP_CHANGES — dégâts et soins :
 - Si la narration ne touche aucune barre (dialogue tranquille, exploration), vaut null.
 - Max 6 entrées par tour.
 
+XP_AWARDS — gains d'expérience :
+- Tu DOIS remplir "xp_awards" quand les joueurs accomplissent quelque chose de significatif : ennemi vaincu, énigme résolue, étape de quête franchie, négociation réussie, exploration majeure.
+- Format : [{"target": "Nom du personnage" (optionnel : si absent, tout le groupe gagne), "amount": 50, "reason": "courte raison FR"}]
+- Magnitudes typiques : trash mob 25-50, ennemi de niveau du groupe 100-150, ennemi élite 200-400, boss 500-1000, étape de quête 50-200, quête majeure complète 300-800.
+- Tiens compte du niveau des PNJ vaincus (donné dans le contexte) : un PNJ de niv. 3 vaut plus qu'un de niv. 1.
+- Si rien ne le justifie (dialogue tranquille, déplacement banal), vaut null. Max 3 entrées par tour.
+
 QUEST_UPDATES — journal de quêtes :
 - Tu DOIS remplir "quest_updates" CHAQUE FOIS qu'un objectif narratif est introduit, mis à jour, accompli ou échoué (ex: PNJ donne une mission, joueurs trouvent un indice qui change l'objectif, ennemi-clé vaincu, deadline manquée).
 - Format : [{"id": "slug_court_en_minuscules", "title": "Titre court FR", "summary": "1-2 phrases sur l'état actuel et le prochain pas attendu", "status": "active" | "completed" | "failed"}]
@@ -99,6 +108,12 @@ QUEST_UPDATES — journal de quêtes :
   • Mise à jour : [{"id": "sauver_marchand", "summary": "Les bandits exigent une rançon de 200 po avant l'aube.", "status": "active"}]
   • Accomplie : [{"id": "sauver_marchand", "status": "completed", "summary": "Le marchand est libre. Il offre une potion en remerciement."}]
 - Max 3 entrées par tour. Si rien ne change côté quêtes, vaut null.
+
+CHAPTER_SUMMARY — mémoire long terme :
+- Tu DOIS mettre à jour "chapter_summary" environ tous les 5 tours OU dès qu'un évènement majeur se produit (mort de PNJ-clé, fin de quête, changement d'acte, alliance scellée, trahison, découverte importante).
+- Format : string de 4 à 8 phrases en français, à la 3e personne, qui résume LE CHAPITRE EN COURS depuis le début ou depuis la dernière mise à jour. Mentionne : qui sont les joueurs et où ils en sont, les PNJ marquants, les enjeux, l'objectif immédiat, les choix moraux faits.
+- Si rien de notable depuis le dernier tour OU si la mise à jour précédente reste valide, vaut null. Surécris uniquement quand l'histoire a réellement avancé — sinon le résumé devient bruité.
+- Ce champ remplace l'ancien résumé : sois exhaustif, ne suppose pas que l'on lira l'historique brut.
 
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 
@@ -126,11 +141,15 @@ export function buildContextSuffix(args: {
   myCharacter?: Character | null;
   npcs?: Record<string, Npc>;
   quests?: Record<string, Quest>;
+  chapterSummary?: string;
 }): string {
   const parts: string[] = [];
   if (args.campaign) {
     parts.push(`Campagne : ${args.campaign.name}.`);
     if (args.campaign.description) parts.push(`Pitch : ${args.campaign.description}.`);
+  }
+  if (args.chapterSummary && args.chapterSummary.trim().length > 0) {
+    parts.push(`Résumé du chapitre en cours : ${args.chapterSummary.trim()}`);
   }
   if (args.scene) {
     parts.push(`Scène actuelle : ${args.scene.label}.`);
@@ -147,7 +166,8 @@ export function buildContextSuffix(args: {
       vitals.push(`MANA ${c.mana}/${c.maxMana}`);
     }
     const vitalsStr = vitals.length ? ` — ${vitals.join(", ")}` : "";
-    parts.push(`Personnage actif : ${c.name} (${c.className}, niv. ${c.level})${vitalsStr}.`);
+    const xpStr = typeof c.xp === "number" ? `, XP ${c.xp}` : "";
+    parts.push(`Personnage actif : ${c.name} (${c.className}, niv. ${c.level}${xpStr})${vitalsStr}.`);
     if (c.inventory && c.inventory.length > 0) {
       const items = c.inventory
         .map((it) => `${it.name}${it.quantity && it.quantity > 1 ? ` ×${it.quantity}` : ""}`)
@@ -172,7 +192,8 @@ export function buildContextSuffix(args: {
         const hp = typeof n.hp === "number" && typeof n.maxHp === "number"
           ? `, PV ${n.hp}/${n.maxHp}`
           : "";
-        return `${n.name} (${n.role}${hp}, ${n.description.slice(0, 80)})`;
+        const lvl = typeof n.level === "number" ? `, niv. ${n.level}` : "";
+        return `${n.name} (${n.role}${lvl}${hp}, ${n.description.slice(0, 80)})`;
       })
       .slice(0, 8)
       .join(" ; ");

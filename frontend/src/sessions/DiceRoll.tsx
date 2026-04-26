@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { playCritFail, playCritSuccess, playDiceRoll } from "../lib/audio";
 
 interface Props {
   finalValue: number;
   onDone: () => void;
   rollerName: string;
+  formula?: string; // e.g. "1d20 + 3 (DEX) + 2 (Discrétion)"
 }
 
-export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
+export default function DiceRoll({ finalValue, onDone, rollerName, formula }: Props) {
   const [shown, setShown] = useState<number>(1);
   const [phase, setPhase] = useState<"rolling" | "settling" | "revealed">("rolling");
+  // Stabilise onDone : sans ça, chaque render du parent crée une nouvelle
+  // arrow function et l'useEffect ci-dessous re-lance l'animation + le son.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     let cancelled = false;
@@ -32,14 +37,16 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
           if (finalValue === 20) playCritSuccess();
           else if (finalValue === 1) playCritFail();
         }, 300);
-        setTimeout(() => !cancelled && onDone(), 2200);
+        setTimeout(() => {
+          if (!cancelled) onDoneRef.current();
+        }, 2200);
       }
     };
     tick();
     return () => {
       cancelled = true;
     };
-  }, [finalValue, onDone]);
+  }, [finalValue]);
 
   const isCrit20 = phase === "revealed" && finalValue === 20;
   const isCrit1 = phase === "revealed" && finalValue === 1;
@@ -52,11 +59,9 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
 
   return (
     <div
-      className={`fixed inset-0 z-40 pointer-events-none flex items-center justify-center fade-in ${
-        isCrit20 ? "crit-flash-gold" : isCrit1 ? "crit-flash-ember crit-shake" : ""
-      }`}
+      className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center fade-in"
+      style={{ background: "rgba(8,6,4,.55)" }}
     >
-      <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-[2px]" />
       {isCrit20 && (
         <div
           className="absolute inset-0 pointer-events-none"
@@ -77,9 +82,11 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
           }}
         />
       )}
-      <div className="relative flex flex-col items-center gap-4">
-        <div className="font-mono text-[11px] tracking-eyebrow uppercase text-parchment-2/80">
-          {rollerName} lance 1d20
+      <div
+        className={`relative flex flex-col items-center gap-4 ${isCrit1 ? "crit-shake" : ""}`}
+      >
+        <div className="font-mono text-[11px] tracking-eyebrow uppercase text-parchment-2/80 text-center">
+          {rollerName} lance {formula ?? "1d20"}
         </div>
         <div
           className={`relative w-40 h-40 ${phase === "rolling" ? "dice-rolling" : "dice-settled"}`}
