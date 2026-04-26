@@ -57,8 +57,22 @@ export default function PlayerHUD({ displayName, character, onForge, onOpenInven
         <div className="font-mono text-[9px] tracking-label uppercase text-ink-400 mt-0.5">{subtitle}</div>
         {character ? (
           <div className="mt-2 space-y-1">
-            <Bar label="PV" value={72} color="ember" />
-            <Bar label="MANA" value={48} color="arcane" />
+            {typeof character.maxHp === "number" && (
+              <Bar
+                label="PV"
+                value={character.hp ?? character.maxHp}
+                max={character.maxHp}
+                color="ember"
+              />
+            )}
+            {typeof character.maxMana === "number" && character.maxMana > 0 && (
+              <Bar
+                label="MANA"
+                value={character.mana ?? character.maxMana}
+                max={character.maxMana}
+                color="arcane"
+              />
+            )}
             {onOpenInventory && (
               <button
                 onClick={onOpenInventory}
@@ -85,14 +99,34 @@ export default function PlayerHUD({ displayName, character, onForge, onOpenInven
   );
 }
 
-function Bar({ label, value, color }: { label: string; value: number; color: "ember" | "arcane" }) {
-  const bg = color === "ember" ? "var(--ember)" : "var(--arcane)";
+function Bar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: "ember" | "arcane";
+}) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const critical = color === "ember" && pct < 25;
+  const bg = color === "ember"
+    ? critical ? "#c0392b" : "var(--ember)"
+    : "var(--arcane)";
   return (
     <div className="flex items-center gap-2">
       <span className="font-mono text-[9px] tracking-label uppercase text-ink-400 w-10">{label}</span>
       <div className="flex-1 h-[6px] rounded-sm overflow-hidden" style={{ background: "rgba(255,255,255,.06)" }}>
-        <div className="h-full" style={{ background: bg, width: `${value}%` }} />
+        <div
+          className="h-full"
+          style={{ background: bg, width: `${pct}%`, transition: "width 380ms ease-out" }}
+        />
       </div>
+      <span className="font-mono text-[9px] text-ink-300 w-12 text-right tabular-nums">
+        {value}/{max}
+      </span>
     </div>
   );
 }

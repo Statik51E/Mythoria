@@ -18,6 +18,7 @@ import {
   STAT_LABELS,
   getClass,
   getRace,
+  rollStartingVitals,
 } from "../lib/characterPresets";
 import { buildPortraitUrl, newSeed } from "../lib/portrait";
 import { rollStarterInventory } from "../lib/starterItems";
@@ -158,6 +159,7 @@ export default function CharacterForge({ onCreate, onClose, dismissible = false,
     setError(null);
     try {
       const { inventory, equipped } = rollStarterInventory(classId);
+      const vitals = rollStartingVitals(classId, finalStats.con);
       const data: Omit<Character, "id"> = {
         ownerUid,
         name: name.trim(),
@@ -176,6 +178,10 @@ export default function CharacterForge({ onCreate, onClose, dismissible = false,
           armor: equipped.armor ?? null,
           accessory: equipped.accessory ?? null,
         },
+        hp: vitals.hp,
+        maxHp: vitals.maxHp,
+        mana: vitals.mana,
+        maxMana: vitals.maxMana,
       };
       await onCreate(data);
     } catch (e) {

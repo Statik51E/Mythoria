@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { playDiceRoll } from "../lib/audio";
+import { playCritFail, playCritSuccess, playDiceRoll } from "../lib/audio";
 
 interface Props {
   finalValue: number;
@@ -26,7 +26,12 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
       } else {
         setShown(finalValue);
         setPhase("settling");
-        setTimeout(() => !cancelled && setPhase("revealed"), 300);
+        setTimeout(() => {
+          if (cancelled) return;
+          setPhase("revealed");
+          if (finalValue === 20) playCritSuccess();
+          else if (finalValue === 1) playCritFail();
+        }, 300);
         setTimeout(() => !cancelled && onDone(), 2200);
       }
     };
@@ -46,8 +51,32 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
     : "rgba(232,208,138,.4)";
 
   return (
-    <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center fade-in">
+    <div
+      className={`fixed inset-0 z-40 pointer-events-none flex items-center justify-center fade-in ${
+        isCrit20 ? "crit-flash-gold" : isCrit1 ? "crit-flash-ember crit-shake" : ""
+      }`}
+    >
       <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-[2px]" />
+      {isCrit20 && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(217,185,104,.55), transparent 60%)",
+            animation: "critFlashFade 1.6s ease-out forwards",
+          }}
+        />
+      )}
+      {isCrit1 && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(200,90,58,.55), transparent 60%)",
+            animation: "critFlashFade 1.6s ease-out forwards",
+          }}
+        />
+      )}
       <div className="relative flex flex-col items-center gap-4">
         <div className="font-mono text-[11px] tracking-eyebrow uppercase text-parchment-2/80">
           {rollerName} lance 1d20
@@ -93,6 +122,20 @@ export default function DiceRoll({ finalValue, onDone, rollerName }: Props) {
         }
         .dice-rolling { animation: diceTumble 1.4s cubic-bezier(.4,.1,.3,1) forwards; }
         .dice-settled { animation: none; }
+        @keyframes critFlashFade {
+          0% { opacity: 0; }
+          15% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes critShake {
+          0%, 100% { transform: translate(0, 0); }
+          15% { transform: translate(-6px, 4px); }
+          30% { transform: translate(6px, -3px); }
+          45% { transform: translate(-4px, -2px); }
+          60% { transform: translate(3px, 5px); }
+          75% { transform: translate(-2px, -3px); }
+        }
+        .crit-shake { animation: critShake 600ms ease-in-out 1; }
       `}</style>
     </div>
   );

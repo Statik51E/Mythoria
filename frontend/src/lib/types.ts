@@ -6,6 +6,17 @@ export interface UserProfile {
   createdAt: Timestamp;
 }
 
+export interface BestiaryEntry {
+  id: string;
+  name: string;
+  role: "ally" | "neutral" | "hostile";
+  description: string;
+  appearancePrompt?: string;
+  outcome?: "defeated" | "left" | "departed";
+  encounters?: number;
+  lastSeenAt?: Timestamp;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -16,6 +27,7 @@ export interface Campaign {
   status: "active" | "paused" | "ended";
   systemRules?: string;
   createdAt: Timestamp;
+  bestiary?: Record<string, BestiaryEntry>;
 }
 
 export type RaceId = "human" | "elf" | "dwarf" | "halfling" | "halforc" | "tiefling";
@@ -77,6 +89,10 @@ export interface Character {
   portraitPrompt?: string;
   inventory: Item[];
   equipment?: Equipment;
+  hp?: number;
+  maxHp?: number;
+  mana?: number;
+  maxMana?: number;
 }
 
 export type NpcRole = "ally" | "neutral" | "hostile";
@@ -109,6 +125,16 @@ export interface CurrentScene {
   setAt?: Timestamp;
 }
 
+export type QuestStatus = "active" | "completed" | "failed";
+
+export interface Quest {
+  id: string;
+  title: string;
+  summary: string;
+  status: QuestStatus;
+  updatedAt?: Timestamp;
+}
+
 export interface SessionDoc {
   id: string;
   startedAt: Timestamp;
@@ -119,6 +145,7 @@ export interface SessionDoc {
   tokens?: Record<string, TokenPosition>;
   npcs?: Record<string, Npc>;
   npcTokens?: Record<string, TokenPosition>;
+  quests?: Record<string, Quest>;
 }
 
 export type MessageType = "player" | "gm" | "system" | "dice" | "npc";
@@ -140,6 +167,23 @@ export interface NpcSpawn {
   role: NpcRole;
   description: string;
   appearancePrompt?: string;
+}
+
+export interface QuestUpdate {
+  // Stable slug; same id = update existing quest. New id = new quest.
+  id: string;
+  title?: string;
+  summary?: string;
+  status?: QuestStatus;
+}
+
+export interface HpChange {
+  // Name of the affected character or NPC. Matched case-insensitively.
+  target: string;
+  // Negative = damage, positive = healing. Mana shifts use deltaMana instead.
+  delta?: number;
+  deltaMana?: number;
+  reason?: string;
 }
 
 export interface ItemGrant {
@@ -169,6 +213,8 @@ export interface Message {
   // departed, was killed, etc.). Matching is case-insensitive on name.
   npcDespawns?: string[];
   itemGrants?: ItemGrant[];
+  hpChanges?: HpChange[];
+  questUpdates?: QuestUpdate[];
   npcId?: string;
   interactionNpcId?: string;
 }

@@ -78,3 +78,85 @@ export function playDiceRoll(durationMs = 1300, volume = 0.5): void {
   settle.start(now + span);
   settle.stop(now + span + 0.4);
 }
+
+// Triumphant rising chord, played when a player rolls a natural 20.
+export function playCritSuccess(volume = 0.6): void {
+  const c = getCtx();
+  if (!c) return;
+  const now = c.currentTime;
+  const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+  notes.forEach((freq, i) => {
+    const t = now + i * 0.07;
+    const osc = c.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, t);
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.55 * volume, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t);
+    osc.stop(t + 0.75);
+  });
+  // Sparkly bell on top.
+  const bell = c.createOscillator();
+  const bellGain = c.createGain();
+  bell.type = "sine";
+  bell.frequency.setValueAtTime(2093, now + 0.05);
+  bellGain.gain.setValueAtTime(0.0001, now + 0.05);
+  bellGain.gain.exponentialRampToValueAtTime(0.35 * volume, now + 0.07);
+  bellGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+  bell.connect(bellGain).connect(c.destination);
+  bell.start(now + 0.05);
+  bell.stop(now + 1.15);
+}
+
+// Dissonant low rumble + tritone for a critical failure.
+export function playCritFail(volume = 0.6): void {
+  const c = getCtx();
+  if (!c) return;
+  const now = c.currentTime;
+
+  const sub = c.createOscillator();
+  const subGain = c.createGain();
+  sub.type = "sawtooth";
+  sub.frequency.setValueAtTime(110, now);
+  sub.frequency.exponentialRampToValueAtTime(38, now + 0.9);
+  subGain.gain.setValueAtTime(0.0001, now);
+  subGain.gain.exponentialRampToValueAtTime(0.55 * volume, now + 0.04);
+  subGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.0);
+  sub.connect(subGain).connect(c.destination);
+  sub.start(now);
+  sub.stop(now + 1.05);
+
+  // Tritone above (the "diabolus in musica") for that ominous edge.
+  const upper = c.createOscillator();
+  const upperGain = c.createGain();
+  upper.type = "square";
+  upper.frequency.setValueAtTime(155.6, now); // E♭3
+  upperGain.gain.setValueAtTime(0.0001, now);
+  upperGain.gain.exponentialRampToValueAtTime(0.18 * volume, now + 0.04);
+  upperGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+  upper.connect(upperGain).connect(c.destination);
+  upper.start(now);
+  upper.stop(now + 0.85);
+
+  // Noise crack to seal it.
+  const sampleLen = Math.floor(c.sampleRate * 0.25);
+  const buffer = c.createBuffer(1, sampleLen, c.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < sampleLen; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sampleLen * 0.25));
+  }
+  const noise = c.createBufferSource();
+  noise.buffer = buffer;
+  const noiseFilter = c.createBiquadFilter();
+  noiseFilter.type = "lowpass";
+  noiseFilter.frequency.value = 700;
+  const noiseGain = c.createGain();
+  noiseGain.gain.setValueAtTime(0.45 * volume, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+  noise.connect(noiseFilter).connect(noiseGain).connect(c.destination);
+  noise.start(now);
+  noise.stop(now + 0.42);
+}

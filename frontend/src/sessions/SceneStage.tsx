@@ -454,6 +454,28 @@ function CharacterToken({
       >
         {character.name}
       </div>
+      {typeof character.maxHp === "number" && (
+        <TokenHpPip current={character.hp ?? character.maxHp} max={character.maxHp} />
+      )}
+    </div>
+  );
+}
+
+function TokenHpPip({ current, max }: { current: number; max: number }) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
+  const dead = current <= 0;
+  const critical = pct < 25;
+  const color = dead ? "#3a3a3a" : critical ? "#c0392b" : "#9bbf6e";
+  return (
+    <div
+      className="w-[64px] h-[4px] rounded-sm overflow-hidden"
+      style={{ background: "rgba(0,0,0,.7)", border: "1px solid rgba(0,0,0,.5)" }}
+      title={`${current}/${max} PV`}
+    >
+      <div
+        className="h-full"
+        style={{ background: color, width: `${pct}%`, transition: "width 380ms ease-out" }}
+      />
     </div>
   );
 }
@@ -510,6 +532,9 @@ function NpcToken({ npc, dragging = false }: { npc: Npc; dragging?: boolean }) {
       >
         {npc.name}
       </div>
+      {typeof npc.maxHp === "number" && (
+        <TokenHpPip current={npc.hp ?? npc.maxHp} max={npc.maxHp} />
+      )}
     </div>
   );
 }

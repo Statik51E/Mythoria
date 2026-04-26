@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import {
-  getCampaign,
+  watchCampaign,
   watchMessages,
   postMessage,
   watchCharacters,
@@ -10,6 +10,7 @@ import {
   updateCharacter,
   watchSession,
   updateSession,
+  updateCampaign,
 } from "../lib/firestore";
 import { callGroq, GroqMessage } from "../lib/groqClient";
 import {
@@ -19,16 +20,20 @@ import {
   buildNpcPersonaSuffix,
 } from "../lib/gmPrompts";
 import type {
+  BestiaryEntry,
   Campaign,
   Character,
   CurrentScene,
   EquipSlot,
   Equipment,
+  HpChange,
   Item,
   ItemGrant,
   Message,
   Npc,
   NpcSpawn,
+  Quest,
+  QuestUpdate,
   SceneSuggestion,
   SessionDoc,
   SuggestedAction,
@@ -46,6 +51,8 @@ import Inventory, { ItemAction } from "./Inventory";
 import NpcForge from "./NpcForge";
 import InteractionScene from "./InteractionScene";
 import MusicPlayer from "./MusicPlayer";
+import QuestLog from "./QuestLog";
+import Bestiary from "./Bestiary";
 
 const PREFILLS: Record<Exclude<QuickAction, "roll">, string> = {
   speak: "Je dis : « ",
@@ -82,6 +89,10 @@ export default function SessionView() {
   const appliedNpcSpawnsRef = useRef<string | null>(null);
   const appliedNpcDespawnsRef = useRef<string | null>(null);
   const appliedItemGrantsRef = useRef<string | null>(null);
+  const appliedHpChangesRef = useRef<string | null>(null);
+  const appliedQuestUpdatesRef = useRef<string | null>(null);
+  const [showQuests, setShowQuests] = useState(false);
+  const [showBestiary, setShowBestiary] = useState(false);
   const bootstrappedRef = useRef(false);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
 
@@ -93,7 +104,7 @@ export default function SessionView() {
 
   useEffect(() => {
     if (!campaignId) return;
-    getCampaign(campaignId).then(setCampaign);
+    return watchCampaign(campaignId, setCampaign);
   }, [campaignId]);
 
   useEffect(() => {
@@ -208,6 +219,28 @@ export default function SessionView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGm, isHost]);
 
+  // ---------- Auto-apply MJ HP changes (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.hpChanges || lastGm.hpChanges.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.hpChanges.map((h) => `${h.target}:${h.delta ?? 0}:${h.deltaMana ?? 0}`).join(",")}`;
+    if (appliedHpChangesRef.current === key) return;
+    appliedHpChangesRef.current = key;
+    handleApplyHpChanges(lastGm.hpChanges);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
+  // ---------- Auto-apply MJ quest updates (host only) ----------
+  useEffect(() => {
+    if (!isHost) return;
+    if (!lastGm?.questUpdates || lastGm.questUpdates.length === 0) return;
+    const key = `${lastGm.id}:${lastGm.questUpdates.map((q) => `${q.id}:${q.status ?? ""}`).join(",")}`;
+    if (appliedQuestUpdatesRef.current === key) return;
+    appliedQuestUpdatesRef.current = key;
+    handleApplyQuestUpdates(lastGm.questUpdates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastGm, isHost]);
+
   // ---------- Bootstrap: auto-call MJ when session opens empty (host only) ----------
   useEffect(() => {
     if (!isHost || !messagesLoaded || messages.length > 0) return;
@@ -215,6 +248,53 @@ export default function SessionView() {
     bootstrappedRef.current = true;
     callMj();
   }, [isHost, messagesLoaded, messages.length]);
+
+  // ---------- Keyboard shortcuts ----------
+  // R = roll d20 · M = "I speak" · S = "I act" · I = inventory · Esc = close.
+  // Skipped while typing in inputs/textareas/contenteditable so the composer
+  // and forge fields are unaffected.
+  useEffect(() => {
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) {
+        if (e.key === "Escape") {
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        if (showInventory) { setShowInventory(false); return; }
+        if (showQuests) { setShowQuests(false); return; }
+        if (showBestiary) { setShowBestiary(false); return; }
+        if (showSceneSelector) { setShowSceneSelector(false); return; }
+        if (showNpcForge) { setShowNpcForge(false); return; }
+        if (activeInteractionNpcId) { setActiveInteractionNpcId(null); return; }
+        if (pendingRoll) { setPendingRoll(null); return; }
+        return;
+      }
+      if (showForge || showInventory || showQuests || showBestiary || showSceneSelector || showNpcForge || pendingRoll) return;
+      const k = e.key.toLowerCase();
+      if (k === "r") { e.preventDefault(); handleQuickAction("roll"); return; }
+      if (k === "m") { e.preventDefault(); handleQuickAction("speak"); return; }
+      if (k === "s") { e.preventDefault(); handleQuickAction("act"); return; }
+      if (k === "i" && myCharacter) { e.preventDefault(); setShowInventory(true); return; }
+      if (k === "q") { e.preventDefault(); setShowQuests(true); return; }
+      if (k === "b") { e.preventDefault(); setShowBestiary(true); return; }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showForge, showInventory, showQuests, showBestiary, showSceneSelector, showNpcForge,
+    pendingRoll, activeInteractionNpcId, myCharacter,
+  ]);
 
   if (!campaign || !campaignId || !sessionId || !user) {
     return (
@@ -240,6 +320,7 @@ export default function SessionView() {
         scene: session?.currentScene,
         myCharacter,
         npcs: session?.npcs,
+        quests: session?.quests,
       });
       const transcript: GroqMessage[] = [
         { role: "system", content: `${MJ_SYSTEM_PROMPT}${ctx}` },
@@ -392,6 +473,7 @@ export default function SessionView() {
     const existing = session?.npcs ?? {};
     const existingTokens = session?.npcTokens ?? {};
     const removedNames: string[] = [];
+    const removedNpcs: Npc[] = [];
     const nextNpcs: Record<string, Npc> = {};
     const nextTokens: Record<string, { x: number; y: number }> = { ...existingTokens };
     const targets = new Set(names.map((n) => n.toLowerCase().trim()));
@@ -399,6 +481,7 @@ export default function SessionView() {
       const matches = targets.has(npc.name.toLowerCase().trim()) || targets.has(id.toLowerCase());
       if (matches) {
         removedNames.push(npc.name);
+        removedNpcs.push(npc);
         delete nextTokens[id];
         // Also clear an active dialogue with this NPC if any.
         if (activeInteractionNpcId === id) setActiveInteractionNpcId(null);
@@ -408,6 +491,7 @@ export default function SessionView() {
     }
     if (removedNames.length === 0) return;
     await updateSession(campaignId, sessionId, { npcs: nextNpcs, npcTokens: nextTokens });
+    await mergeIntoBestiary(removedNpcs);
     for (const name of removedNames) {
       await postMessage(
         campaignId,
@@ -417,6 +501,29 @@ export default function SessionView() {
         "system"
       );
     }
+  }
+
+  async function mergeIntoBestiary(removed: Npc[]) {
+    if (!campaignId || removed.length === 0) return;
+    const current = campaign?.bestiary ?? {};
+    const next: Record<string, BestiaryEntry> = { ...current };
+    for (const npc of removed) {
+      const slug = npc.id || npc.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 32);
+      const prev = next[slug];
+      const outcome: BestiaryEntry["outcome"] =
+        typeof npc.hp === "number" && npc.hp <= 0 ? "defeated" : "departed";
+      const entry: BestiaryEntry = {
+        id: slug,
+        name: npc.name,
+        role: npc.role,
+        description: npc.description,
+        outcome,
+        encounters: (prev?.encounters ?? 0) + 1,
+      };
+      if (npc.appearancePrompt) entry.appearancePrompt = npc.appearancePrompt;
+      next[slug] = entry;
+    }
+    await updateCampaign(campaignId, { bestiary: next });
   }
 
   async function handleApplyItemGrants(grants: ItemGrant[]) {
@@ -471,6 +578,111 @@ export default function SessionView() {
       const nextInventory = [...char.inventory, ...items];
       await updateCharacter(campaignId, char.id, { inventory: nextInventory });
     }
+    for (const line of lines) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
+    }
+  }
+
+  async function handleApplyHpChanges(changes: HpChange[]) {
+    if (!campaignId || !sessionId || !user) return;
+    const npcMap = session?.npcs ?? {};
+    const npcByName = new Map(
+      Object.entries(npcMap).map(([id, n]) => [n.name.toLowerCase().trim(), { id, npc: n }])
+    );
+    const charByName = new Map(
+      characters.map((c) => [c.name.toLowerCase().trim(), c])
+    );
+
+    const charPatch = new Map<string, Partial<Character>>();
+    const npcPatch: Record<string, Npc> = {};
+    let npcDirty = false;
+    const lines: string[] = [];
+
+    function fmtDelta(d: number, kind: "hp" | "mana", reason?: string): string {
+      const verb = kind === "hp"
+        ? d < 0 ? `subit ${-d} dégât${-d > 1 ? "s" : ""}` : `regagne ${d} PV`
+        : d < 0 ? `dépense ${-d} mana` : `regagne ${d} mana`;
+      return reason ? `${verb} (${reason})` : verb;
+    }
+
+    for (const ch of changes) {
+      const needle = ch.target.toLowerCase().trim();
+      const charHit = charByName.get(needle)
+        ?? characters.find((c) => c.name.toLowerCase().startsWith(needle));
+      if (charHit) {
+        const patch = charPatch.get(charHit.id) ?? {};
+        if (typeof ch.delta === "number" && typeof charHit.maxHp === "number") {
+          const cur = (patch.hp ?? charHit.hp ?? charHit.maxHp);
+          patch.hp = Math.max(0, Math.min(charHit.maxHp, cur + ch.delta));
+        }
+        if (typeof ch.deltaMana === "number" && typeof charHit.maxMana === "number") {
+          const cur = (patch.mana ?? charHit.mana ?? charHit.maxMana);
+          patch.mana = Math.max(0, Math.min(charHit.maxMana, cur + ch.deltaMana));
+        }
+        charPatch.set(charHit.id, patch);
+        if (typeof ch.delta === "number") lines.push(`${charHit.name} ${fmtDelta(ch.delta, "hp", ch.reason)}.`);
+        if (typeof ch.deltaMana === "number") lines.push(`${charHit.name} ${fmtDelta(ch.deltaMana, "mana", ch.reason)}.`);
+        continue;
+      }
+
+      const npcHit = npcByName.get(needle);
+      if (npcHit) {
+        const cur = npcPatch[npcHit.id] ?? { ...npcHit.npc };
+        // Default an NPC's maxHp on first hit so deltas have a clamp.
+        if (typeof cur.maxHp !== "number") cur.maxHp = 20;
+        if (typeof cur.hp !== "number") cur.hp = cur.maxHp;
+        if (typeof ch.delta === "number") {
+          cur.hp = Math.max(0, Math.min(cur.maxHp, cur.hp + ch.delta));
+          lines.push(`${cur.name} ${fmtDelta(ch.delta, "hp", ch.reason)}.`);
+        }
+        npcPatch[npcHit.id] = cur;
+        npcDirty = true;
+      }
+    }
+
+    for (const [id, patch] of charPatch.entries()) {
+      if (Object.keys(patch).length > 0) await updateCharacter(campaignId, id, patch);
+    }
+    if (npcDirty) {
+      const merged: Record<string, Npc> = { ...npcMap };
+      for (const [id, n] of Object.entries(npcPatch)) merged[id] = n;
+      await updateSession(campaignId, sessionId, { npcs: merged });
+    }
+    for (const line of lines) {
+      await postMessage(campaignId, sessionId, user.uid, line, "system");
+    }
+  }
+
+  async function handleApplyQuestUpdates(updates: QuestUpdate[]) {
+    if (!campaignId || !sessionId || !user) return;
+    const existing = session?.quests ?? {};
+    const next: Record<string, Quest> = { ...existing };
+    const lines: string[] = [];
+    for (const u of updates) {
+      const prev = next[u.id];
+      if (prev) {
+        const merged: Quest = {
+          ...prev,
+          title: u.title ?? prev.title,
+          summary: u.summary ?? prev.summary,
+          status: u.status ?? prev.status,
+        };
+        next[u.id] = merged;
+        if (u.status && u.status !== prev.status) {
+          const word = u.status === "completed" ? "accomplie" : u.status === "failed" ? "échouée" : "rouverte";
+          lines.push(`Quête ${word} : ${merged.title}.`);
+        }
+      } else if (u.title && u.summary) {
+        next[u.id] = {
+          id: u.id,
+          title: u.title,
+          summary: u.summary,
+          status: u.status ?? "active",
+        };
+        lines.push(`Nouvelle quête : ${u.title}.`);
+      }
+    }
+    await updateSession(campaignId, sessionId, { quests: next });
     for (const line of lines) {
       await postMessage(campaignId, sessionId, user.uid, line, "system");
     }
@@ -600,6 +812,28 @@ export default function SessionView() {
           </div>
         </div>
         <div className="flex items-center gap-5">
+          <button
+            onClick={() => setShowQuests(true)}
+            className="font-mono text-[10px] tracking-label uppercase text-ink-300 hover:text-gold-400"
+            title="Journal de quêtes (Q)"
+          >
+            📜 Quêtes{(() => {
+              const a = session?.quests
+                ? Object.values(session.quests).filter((q) => q.status === "active").length
+                : 0;
+              return a > 0 ? ` · ${a}` : "";
+            })()}
+          </button>
+          <button
+            onClick={() => setShowBestiary(true)}
+            className="font-mono text-[10px] tracking-label uppercase text-ink-300 hover:text-gold-400"
+            title="Bestiaire (B)"
+          >
+            🐺 Bestiaire{(() => {
+              const n = campaign?.bestiary ? Object.keys(campaign.bestiary).length : 0;
+              return n > 0 ? ` · ${n}` : "";
+            })()}
+          </button>
           <span className="font-mono text-[10px] tracking-label uppercase text-ink-400">
             {user.displayName ?? user.email?.split("@")[0]}
           </span>
@@ -746,6 +980,14 @@ export default function SessionView() {
 
       {showNpcForge && (
         <NpcForge onCreate={handleCreateNpc} onClose={() => setShowNpcForge(false)} />
+      )}
+
+      {showQuests && (
+        <QuestLog quests={session?.quests} onClose={() => setShowQuests(false)} />
+      )}
+
+      {showBestiary && (
+        <Bestiary bestiary={campaign?.bestiary} onClose={() => setShowBestiary(false)} />
       )}
 
       <MusicPlayer scene={session?.currentScene} npcs={session?.npcs} />

@@ -211,6 +211,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     let itemGrants: ItemGrantOut[] | undefined;
     let npcDespawns: string[] | undefined;
+    type HpChangeOut = { target: string; delta?: number; deltaMana?: number; reason?: string };
+    let hpChanges: HpChangeOut[] | undefined;
+    type QuestUpdateOut = { id: string; title?: string; summary?: string; status?: "active" | "completed" | "failed" };
+    let questUpdates: QuestUpdateOut[] | undefined;
+    const VALID_QUEST_STATUS = new Set(["active", "completed", "failed"]);
     const VALID_ITEM_TYPES = new Set(["weapon", "armor", "accessory", "potion", "scroll", "tool", "misc"]);
     const VALID_SLOTS = new Set(["weapon", "armor", "accessory"]);
 
@@ -297,6 +302,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
           if (itemGrants.length === 0) itemGrants = undefined;
         }
+        if (Array.isArray(parsed.hp_changes)) {
+          hpChanges = parsed.hp_changes
+            .filter((h: unknown): h is Record<string, unknown> =>
+              typeof h === "object" && h !== null
+              && typeof (h as { target?: unknown }).target === "string"
+              && (typeof (h as { delta?: unknown }).delta === "number"
+                || typeof (h as { deltaMana?: unknown }).deltaMana === "number")
+            )
+            .slice(0, 6)
+            .map((h): HpChangeOut => {
+              const out: HpChangeOut = { target: String(h.target).slice(0, 60).trim() };
+              const d = typeof h.delta === "number" ? Math.trunc(h.delta) : undefined;
+              const dm = typeof h.deltaMana === "number" ? Math.trunc(h.deltaMana) : undefined;
+              if (d !== undefined && d !== 0) out.delta = Math.max(-9999, Math.min(9999, d));
+              if (dm !== undefined && dm !== 0) out.deltaMana = Math.max(-9999, Math.min(9999, dm));
+              if (typeof h.reason === "string") out.reason = h.reason.slice(0, 80);
+              return out;
+            })
+            .filter((h) => h.target.length > 0 && (h.delta !== undefined || h.deltaMana !== undefined));
+          if (hpChanges.length === 0) hpChanges = undefined;
+        }
+        if (Array.isArray(parsed.quest_updates)) {
+          questUpdates = parsed.quest_updates
+            .filter((q: unknown): q is Record<string, unknown> =>
+              typeof q === "object" && q !== null
+              && typeof (q as { id?: unknown }).id === "string"
+              && (q as { id: string }).id.trim().length > 0
+            )
+            .slice(0, 3)
+            .map((q): QuestUpdateOut => {
+              const out: QuestUpdateOut = {
+                id: String(q.id).trim().slice(0, 40).toLowerCase().replace(/[^a-z0-9_-]/g, "_"),
+              };
+              if (typeof q.title === "string") out.title = q.title.slice(0, 80);
+              if (typeof q.summary === "string") out.summary = q.summary.slice(0, 300);
+              if (typeof q.status === "string" && VALID_QUEST_STATUS.has(q.status)) {
+                out.status = q.status as QuestUpdateOut["status"];
+              }
+              return out;
+            })
+            .filter((q) => q.id.length > 0);
+          if (questUpdates.length === 0) questUpdates = undefined;
+        }
       } catch {
         // If parsing fails, fall back to using rawContent as narration text.
       }
@@ -316,6 +364,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (npcSpawns && npcSpawns.length > 0) docData.npcSpawns = npcSpawns;
       if (npcDespawns && npcDespawns.length > 0) docData.npcDespawns = npcDespawns;
       if (itemGrants && itemGrants.length > 0) docData.itemGrants = itemGrants;
+      if (hpChanges && hpChanges.length > 0) docData.hpChanges = hpChanges;
+      if (questUpdates && questUpdates.length > 0) docData.questUpdates = questUpdates;
       if (npcId) docData.npcId = npcId;
       if (interactionNpcId) docData.interactionNpcId = interactionNpcId;
       await db

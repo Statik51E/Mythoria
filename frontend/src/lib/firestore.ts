@@ -40,6 +40,22 @@ export async function getCampaign(campaignId: string): Promise<Campaign | null> 
   return snap.exists() ? ({ id: snap.id, ...(snap.data() as Omit<Campaign, "id">) }) : null;
 }
 
+export function watchCampaign(
+  campaignId: string,
+  cb: (campaign: Campaign | null) => void
+): Unsubscribe {
+  return onSnapshot(doc(db, "campaigns", campaignId), (snap) => {
+    cb(snap.exists() ? ({ id: snap.id, ...(snap.data() as Omit<Campaign, "id">) }) : null);
+  });
+}
+
+export async function updateCampaign(
+  campaignId: string,
+  partial: Partial<Omit<Campaign, "id">>
+): Promise<void> {
+  await updateDoc(doc(db, "campaigns", campaignId), partial as Record<string, unknown>);
+}
+
 export async function deleteCampaign(campaignId: string): Promise<void> {
   // Firestore Web SDK has no recursive delete — clean leaves first, then trunk.
   const sessSnap = await getDocs(collection(db, `campaigns/${campaignId}/sessions`));

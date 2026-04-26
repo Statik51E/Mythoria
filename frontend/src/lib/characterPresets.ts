@@ -60,6 +60,8 @@ export interface ClassPreset {
   clothingPrompt: string;
   primarySkills: SkillKey[];
   startingStat: StatKey;
+  baseHp: number;
+  baseMana: number;
 }
 
 export const CLASSES: ClassPreset[] = [
@@ -70,6 +72,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing plate armor, holding a longsword, battle-worn",
     primarySkills: ["combat"],
     startingStat: "str",
+    baseHp: 30,
+    baseMana: 0,
   },
   {
     id: "mage",
@@ -78,6 +82,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing arcane robes with mystical symbols, holding a glowing staff",
     primarySkills: ["magic", "knowledge"],
     startingStat: "int",
+    baseHp: 18,
+    baseMana: 30,
   },
   {
     id: "rogue",
@@ -86,6 +92,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing dark leather armor with hood up, twin daggers at the belt",
     primarySkills: ["stealth", "social"],
     startingStat: "dex",
+    baseHp: 22,
+    baseMana: 0,
   },
   {
     id: "paladin",
@@ -94,6 +102,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing ornate silver plate armor, holy symbol pendant, holding a warhammer",
     primarySkills: ["combat", "magic"],
     startingStat: "str",
+    baseHp: 28,
+    baseMana: 12,
   },
   {
     id: "ranger",
@@ -102,6 +112,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing forest green ranger leathers with cloak, longbow on the back, weathered face",
     primarySkills: ["survival", "stealth"],
     startingStat: "dex",
+    baseHp: 24,
+    baseMana: 8,
   },
   {
     id: "cleric",
@@ -110,6 +122,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing chainmail under priest robes, holding an ornate mace, holy aura",
     primarySkills: ["magic", "social"],
     startingStat: "wis",
+    baseHp: 24,
+    baseMana: 24,
   },
   {
     id: "barbarian",
@@ -118,6 +132,8 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing fur and leather armor, wielding a huge two-handed axe, fierce expression, war paint",
     primarySkills: ["combat", "survival"],
     startingStat: "str",
+    baseHp: 32,
+    baseMana: 0,
   },
   {
     id: "bard",
@@ -126,8 +142,24 @@ export const CLASSES: ClassPreset[] = [
     clothingPrompt: "wearing fancy traveling clothes with feathered hat, lute slung over shoulder, charming smile",
     primarySkills: ["social", "magic"],
     startingStat: "cha",
+    baseHp: 20,
+    baseMana: 18,
   },
 ];
+
+// Adds the CON modifier (D&D-ish: (con-10)/2) to baseHp, with a sane floor.
+export function rollStartingVitals(
+  classId: ClassId,
+  con: number
+): { hp: number; maxHp: number; mana: number; maxMana: number } {
+  const cls = CLASSES.find((c) => c.id === classId);
+  const base = cls?.baseHp ?? 24;
+  const baseMana = cls?.baseMana ?? 0;
+  const conMod = Math.floor((con - 10) / 2);
+  const maxHp = Math.max(8, base + conMod);
+  const maxMana = baseMana;
+  return { hp: maxHp, maxHp, mana: maxMana, maxMana };
+}
 
 export const STAT_LABELS: Record<StatKey, { short: string; full: string }> = {
   str: { short: "FOR", full: "Force" },

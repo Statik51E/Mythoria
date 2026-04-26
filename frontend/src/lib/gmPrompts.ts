@@ -1,4 +1,4 @@
-import type { Campaign, Character, CurrentScene, Npc } from "./types";
+import type { Campaign, Character, CurrentScene, Npc, Quest } from "./types";
 import { SCENE_PRESETS } from "./scenePresets";
 
 const SCENE_LIBRARY_BLOCK = SCENE_PRESETS
@@ -16,7 +16,9 @@ Tu réponds TOUJOURS en JSON strict, jamais en texte brut, avec cette structure 
   "scene_change": null,
   "npc_spawns": null,
   "npc_despawns": null,
-  "item_grants": null
+  "item_grants": null,
+  "hp_changes": null,
+  "quest_updates": null
 }
 
 Règles strictes :
@@ -73,6 +75,31 @@ ITEM_GRANTS — donner des objets aux personnages :
   • Récompense ciblée : {"name": "Médaillon du capitaine", "type": "accessory", "slot": "accessory", "description": "Le capitaine te le tend en signe de gratitude.", "character": "Aldric"}
 - Max 4 objets par tour. Sinon vaut null. NE DONNE PAS d'objet déjà présent dans l'inventaire du contexte. Si tu narres "vous trouvez X" sans le mettre dans item_grants, le joueur ne l'aura JAMAIS — donc inclue-le toujours.
 
+HP_CHANGES — dégâts et soins :
+- Tu DOIS remplir "hp_changes" CHAQUE FOIS qu'un personnage ou PNJ subit des dégâts, est soigné, ou consomme/regagne du mana. Sans ça, les barres de PV/MANA ne bougent JAMAIS et les combats n'ont aucun poids.
+- Format : [{"target": "Nom exact du personnage/PNJ", "delta": -8, "reason": "coup d'épée du bandit"}] — delta négatif = dégâts, positif = soin. Pour le mana : "deltaMana" à la place de "delta".
+- Tu PEUX combiner delta et deltaMana dans la même entrée (ex: un sort qui coûte du mana ET soigne).
+- Magnitudes typiques (niveau 1) : coup faible 2-4 / coup moyen 5-9 / coup fort 10-15 / critique 15-25 / soin léger 4-8 / soin majeur 12-20 / sort de base 4-8 mana.
+- Exemples :
+  • Joueur encaisse une flèche : [{"target": "Aldric", "delta": -6, "reason": "flèche dans l'épaule"}]
+  • Soin d'un clerc : [{"target": "Aldric", "delta": 10, "reason": "imposition des mains"}, {"target": "Mira", "deltaMana": -6, "reason": "incantation de soins"}]
+  • PNJ blessé : [{"target": "Bandit borgne", "delta": -12, "reason": "épée elfique en plein flanc"}]
+  • Repos court qui rend tout : [{"target": "Aldric", "delta": 999, "reason": "repos"}, {"target": "Mira", "deltaMana": 999}] (le système clampera à maxHp/maxMana)
+- Utilise EXACTEMENT le nom tel qu'il figure dans "Personnage actif" ou "PNJ présents" du contexte.
+- Si la narration ne touche aucune barre (dialogue tranquille, exploration), vaut null.
+- Max 6 entrées par tour.
+
+QUEST_UPDATES — journal de quêtes :
+- Tu DOIS remplir "quest_updates" CHAQUE FOIS qu'un objectif narratif est introduit, mis à jour, accompli ou échoué (ex: PNJ donne une mission, joueurs trouvent un indice qui change l'objectif, ennemi-clé vaincu, deadline manquée).
+- Format : [{"id": "slug_court_en_minuscules", "title": "Titre court FR", "summary": "1-2 phrases sur l'état actuel et le prochain pas attendu", "status": "active" | "completed" | "failed"}]
+- Réutilise EXACTEMENT le même "id" pour mettre à jour une quête existante (le système fusionne par id). Sinon une nouvelle quête est créée.
+- Quêtes en cours dans le contexte : tu peux les lire dans "Quêtes ouvertes" et y faire référence par leur id.
+- Exemples :
+  • Nouvelle quête : [{"id": "sauver_marchand", "title": "Sauver le marchand", "summary": "Le marchand est retenu en otage par les bandits dans la grotte au nord.", "status": "active"}]
+  • Mise à jour : [{"id": "sauver_marchand", "summary": "Les bandits exigent une rançon de 200 po avant l'aube.", "status": "active"}]
+  • Accomplie : [{"id": "sauver_marchand", "status": "completed", "summary": "Le marchand est libre. Il offre une potion en remerciement."}]
+- Max 3 entrées par tour. Si rien ne change côté quêtes, vaut null.
+
 - Reste cohérent avec ce qui a déjà été établi dans la conversation.`;
 
 export const NPC_VOICE_PROMPT = `Tu joues UN PERSONNAGE NON-JOUEUR dans un TTRPG fantasy. Tu n'es plus le narrateur omniscient, tu ES ce personnage.
@@ -98,6 +125,7 @@ export function buildContextSuffix(args: {
   scene?: CurrentScene;
   myCharacter?: Character | null;
   npcs?: Record<string, Npc>;
+  quests?: Record<string, Quest>;
 }): string {
   const parts: string[] = [];
   if (args.campaign) {
@@ -111,7 +139,15 @@ export function buildContextSuffix(args: {
   }
   if (args.myCharacter) {
     const c = args.myCharacter;
-    parts.push(`Personnage actif : ${c.name} (${c.className}, niv. ${c.level}).`);
+    const vitals: string[] = [];
+    if (typeof c.hp === "number" && typeof c.maxHp === "number") {
+      vitals.push(`PV ${c.hp}/${c.maxHp}`);
+    }
+    if (typeof c.mana === "number" && typeof c.maxMana === "number" && c.maxMana > 0) {
+      vitals.push(`MANA ${c.mana}/${c.maxMana}`);
+    }
+    const vitalsStr = vitals.length ? ` — ${vitals.join(", ")}` : "";
+    parts.push(`Personnage actif : ${c.name} (${c.className}, niv. ${c.level})${vitalsStr}.`);
     if (c.inventory && c.inventory.length > 0) {
       const items = c.inventory
         .map((it) => `${it.name}${it.quantity && it.quantity > 1 ? ` ×${it.quantity}` : ""}`)
@@ -120,9 +156,24 @@ export function buildContextSuffix(args: {
       parts.push(`Inventaire de ${c.name} : ${items}.`);
     }
   }
+  if (args.quests) {
+    const open = Object.values(args.quests).filter((q) => q.status === "active");
+    if (open.length > 0) {
+      const list = open
+        .map((q) => `[${q.id}] ${q.title} — ${q.summary.slice(0, 120)}`)
+        .slice(0, 6)
+        .join(" ; ");
+      parts.push(`Quêtes ouvertes : ${list}.`);
+    }
+  }
   if (args.npcs && Object.keys(args.npcs).length > 0) {
     const list = Object.values(args.npcs)
-      .map((n) => `${n.name} (${n.role}, ${n.description.slice(0, 80)})`)
+      .map((n) => {
+        const hp = typeof n.hp === "number" && typeof n.maxHp === "number"
+          ? `, PV ${n.hp}/${n.maxHp}`
+          : "";
+        return `${n.name} (${n.role}${hp}, ${n.description.slice(0, 80)})`;
+      })
       .slice(0, 8)
       .join(" ; ");
     parts.push(`PNJ présents : ${list}.`);
